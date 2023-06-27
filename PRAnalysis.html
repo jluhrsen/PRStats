@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Display JSON Data with Bar Graphs</title>
+    <style>
+        #chart-container {
+            width: 100%;
+            max-width: 2400px; /* Adjust the max-width as needed */
+            height: 800px; /* Adjust the height as needed */
+            margin: 0 auto;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #chart {
+            display: block;
+            width: 100%;
+            height: 100%;
+            max-width: 100%; /* Adjust the max-width as needed */
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f5f5f5;
+        }
+
+        tr:hover {
+            background-color: #f9f9f9;
+        }
+
+        a {
+            color: #337ab7;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        canvas {
+            display: block;
+            margin-top: 10px;
+            max-width: 400px;
+        }
+    </style>
+</head>
+<body>
+<div id="chart-container">
+    <canvas id="chart"></canvas>
+</div>
+
+<table id="pr-table">
+    <thead>
+    <tr>
+        <th data-sortable>Org</th>
+        <th data-sortable>Repo</th>
+        <th data-sortable>PRNum</th>
+        <th data-sortable>TotalCost</th>
+        <th data-sortable>PRLifeSpan</th>
+        <th data-sortable>PRRetestCount</th>
+    </tr>
+    </thead>
+    <tbody></tbody> <!-- Add the tbody element -->
+</table>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    fetch('../pr_costs.json')
+        .then(response => response.json())
+        .then(jsonData => {
+            var table = document.getElementById('pr-table');
+
+            // Sort the data by TotalCost in descending order
+            jsonData.sort((a, b) => b.TotalCost - a.TotalCost);
+
+            var topResults = jsonData.slice(0, 25);
+
+            var table = document.getElementById('pr-table');
+            var tableRows = table.getElementsByTagName('tr');
+
+// Add data-sortable attribute to sortable columns (excluding the first column)
+            var sortableColumns = table.querySelectorAll('th[data-sortable]');
+            sortableColumns.forEach(function(column) {
+                column.addEventListener('click', handleSortClick);
+            });
+
+// Sort direction constants
+            var ASCENDING = 'ascending';
+            var DESCENDING = 'descending';
+
+// Initially, no column is sorted
+            var sortedColumn = null;
+            var sortDirection = ASCENDING;
+
+            jsonData.forEach(function(obj) {
+                var prLink = createPRLink(obj.Org, obj.Repo, obj.PRNum);
+
+                var row = document.createElement('tr');
+                row.innerHTML = `
+            <td>${obj.Org}</td>
+            <td>${obj.Repo}</td>
+            <td>${prLink}</td>
+            <td>$${obj.TotalCost.toFixed(2)}</td>
+            <td>${formatPRLifeSpan(obj.PRLifeSpan)}</td>
+            <td>${obj.PRRetestCount}</td>
+          `;
+
+                table.appendChild(row);
+            });
+
+            // Prepare the data for the bar graph
+            var chartData = {
+                labels: topResults.map(obj => `PR ${obj.PRNum}`),
+                datasets: [
+                    {
+                        label: 'Total Cost',
+                        backgroundColor: 'rgba(75, 192, 192, 0.5)',
+                        data: topResults.map(obj => obj.TotalCost.toFixed(2))
+                    }
+                ]
+            };
+            // Extract PRRetestCount values from JSON data
+            var prRetestCountData = jsonData.map(item => item.PRRetestCount);
+
+// Calculate the maximum value of PRRetestCount
+            var prRetestCountMax = Math.max(...prRetestCountData);
+            var prRetestCountMaxScaled = prRetestCountMax * 1.1; // Apply 10% scaling
+
+            var prRetestCountDataset = {
+                label: 'PRRetestCount',
+                data: prRetestCountData,
+                backgroundColor: 'rgba(255, 99, 132, 0.5)',
+                borderColor: 'rgba(255, 99, 132, 1)',
+                borderWidth: 1,
+                yAxisID: 'y1' // Assigning the right y-axis
+            };
+            var prLifeSpanData = jsonData.map(item => item.PRLifeSpan);
+
+            var prLifeSpanDataset = {
+                label: 'PRLifeSpan',
+                data: prLifeSpanData,
+                backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                borderColor: 'rgba(54, 162, 235, 1)',
+                borderWidth: 1,
+                barPercentage: 0.5, // Adjust the bar height, increase or decrease the value as needed
+                yAxisID: 'y0' // Assigning the left y-axis
+            };
+            chartData.datasets.push(prRetestCountDataset);
+            chartData.datasets.push(prLifeSpanDataset);
+
+// Render the bar chart
+            var ctx = document.getElementById('chart').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: chartData,
+                options: {
+                    responsive: true,
+                    scales: {
+                        x: {
+                            display: true
+                        },
+                        y: {
+                            type: 'linear',
+                            position: 'left',
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'PR Cost' // Add your desired label here
+                            },
+                            ticks: {
+                                precision: 0,
+                                callback: function (value) {
+                                    return '$' + value;
+                                }
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            position: 'right',
+                            beginAtZero: true,
+                            max: prRetestCountMaxScaled,
+                            title: {
+                                display: true,
+                                text: '/retest count' // Add your desired label here
+                            },
+                            ticks: {
+                                precision: 0,
+                                callback: function (value) {
+                                    return value.toFixed(0);
+                                }
+                            },
+                            grid: {
+                                drawOnChartArea: false
+                            }
+                        }
+                    },
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Top 25 Pull Requests'
+                        },
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+
+
+            // Helper function to create PR link
+            function createPRLink(org, repo, prNum) {
+                var url = `https://github.com/${org}/${repo}/pull/${prNum}`;
+                return `<a href="${url}" target="_blank">${prNum}</a>`;
+            }
+
+            // Helper function to format PRLifeSpan
+            function formatPRLifeSpan(value) {
+                var days = Math.floor(value);
+                var halfDays = ((value % 1) * 10).toFixed(0);
+                if (halfDays === '10') {
+                    days++; // Increment days if halfDays reaches 10
+                    halfDays = '0';
+                }
+                return `${days}.${halfDays} days`;
+            }
+
+            function handleSortClick() {
+                var column = this;
+                var columnIndex = column.cellIndex;
+
+                if (sortedColumn === column) {
+                    // Reverse the sort direction if the same column is clicked again
+                    sortDirection = sortDirection === ASCENDING ? DESCENDING : ASCENDING;
+                } else {
+                    // Set the clicked column as the sorted column
+                    sortedColumn = column;
+                    sortDirection = ASCENDING;
+                }
+
+                // Remove the 'ascending' and 'descending' classes from all columns
+                sortableColumns.forEach(function(col) {
+                    col.classList.remove(ASCENDING, DESCENDING);
+                });
+
+                // Add the appropriate sort class to the clicked column
+                column.classList.add(sortDirection);
+
+                // Sort the table rows based on the column's data attribute
+                var rowsArray = Array.from(tableRows).slice(1); // Exclude the header row
+                rowsArray.sort(function(rowA, rowB) {
+                    var cellA = rowA.cells[columnIndex].textContent.trim();
+                    var cellB = rowB.cells[columnIndex].textContent.trim();
+
+                    if (columnIndex === 3 || columnIndex === 5) {
+                        // If the column contains numerical data (TotalCost or PRRetestCount)
+                        var numA = parseFloat(cellA.replace(/[^\d.-]/g, ''));
+                        var numB = parseFloat(cellB.replace(/[^\d.-]/g, ''));
+                        return sortDirection === ASCENDING ? numA - numB : numB - numA;
+                    } else if (columnIndex === 4) {
+                        // If the column is PRLifeSpan
+                        var prLifeSpanA = parsePRLifeSpan(cellA);
+                        var prLifeSpanB = parsePRLifeSpan(cellB);
+                        return sortDirection === ASCENDING ? prLifeSpanA - prLifeSpanB : prLifeSpanB - prLifeSpanA;
+                    } else {
+                        // For non-numerical data, perform a string comparison
+                        if (sortDirection === ASCENDING) {
+                            return cellA.localeCompare(cellB);
+                        } else {
+                            return cellB.localeCompare(cellA);
+                        }
+                    }
+                });
+
+                // Remove existing rows from the table body
+                var tableBody = table.querySelector('tbody');
+                while (tableBody.firstChild) {
+                    tableBody.removeChild(tableBody.firstChild);
+                }
+
+                // Append the sorted rows back to the table body
+                rowsArray.forEach(function(row) {
+                    tableBody.appendChild(row);
+                });
+            }
+
+// Helper function to parse PRLifeSpan values
+            function parsePRLifeSpan(value) {
+                var parts = value.split('.');
+                var days = parseInt(parts[0], 10);
+                var halfDays = parseInt(parts[1] || '0', 10) / 10;
+                return days + halfDays;
+            }
+
+
+
+
+        });
+</script>
+</body>
+</html>
+
