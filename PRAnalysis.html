@@ -75,7 +75,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-    fetch('../pr_costs.json')
+    fetch('./pr_costs.json')
         .then(response => response.json())
         .then(jsonData => {
             var table = document.getElementById('pr-table');
