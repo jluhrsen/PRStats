@@ -31,7 +31,7 @@ type JobInfo struct {
 	Cost     float64
 }
 
-type PRCost struct {
+type PRInfo struct {
 	Org               string
 	Repo              string
 	PRNum             int
@@ -45,7 +45,7 @@ type PRCost struct {
 	TotalCost         float64
 }
 
-var prCosts []PRCost
+var prInfoSlice []PRInfo
 
 var (
 	awsCostRate     = 0.90
@@ -168,6 +168,7 @@ func main() {
 						!strings.Contains(prJobLink, "unit") && !strings.Contains(prJobLink, "gofmt") {
 						fmt.Printf("Unable to calculate costs for %s\n", prJobLink)
 					}
+					fmt.Printf("Need to calculate a cost for #{prJobLink}\n")
 				}
 			}
 			PRJobInfo = append(PRJobInfo, jobInfo)
@@ -184,7 +185,7 @@ func main() {
 		vsphereTotalCost := vsphereTotalHours * vsphereCostRate
 		azureTotalCost := azureTotalHours * azureCostRate
 		totalCloudCosts := awsTotalCost + gcpTotalCost + vsphereTotalCost + azureTotalCost
-		prCost := PRCost{
+		prInfo := PRInfo{
 			Org:               org,
 			Repo:              repo,
 			PRNum:             prNum,
@@ -198,15 +199,15 @@ func main() {
 			TotalCost:         totalCloudCosts,
 		}
 
-		// Append the PRCost to the slice
-		prCosts = append(prCosts, prCost)
+		// Append the PRInfo to the slice
+		prInfoSlice = append(prInfoSlice, prInfo)
 	}
-	sort.Slice(prCosts, func(i, j int) bool {
-		return prCosts[i].TotalCost > prCosts[j].TotalCost
+	sort.Slice(prInfoSlice, func(i, j int) bool {
+		return prInfoSlice[i].TotalCost > prInfoSlice[j].TotalCost
 	})
-	jsonData, err := json.Marshal(prCosts)
+	jsonData, err := json.Marshal(prInfoSlice)
 	if err != nil {
-		log.Fatalf("Failed to marshal prCosts to JSON: %v", err)
+		log.Fatalf("Failed to marshal prInfoSlice to JSON: %v", err)
 	}
 
 	// Write JSON data to a file
@@ -222,7 +223,7 @@ func main() {
 	}
 
 	fmt.Println("PR Costs (sorted from most expensive to least):")
-	for _, prCost := range prCosts {
+	for _, prInfo := range prInfoSlice {
 		fmt.Printf(`
 	TOTAL PR COST:  $%.2f
 	TOTAL CLOUD USAGE FOR PR %s/%s/%d
@@ -239,9 +240,9 @@ func main() {
 			HOURS: %.2f
 			COSTS: $%.2f
 `,
-			prCost.TotalCost, prCost.Org, prCost.Repo, prCost.PRNum, prCost.AWSTotalHours, awsCostRate*prCost.AWSTotalHours,
-			prCost.GCPTotalHours, gcpCostRate*prCost.GCPTotalHours, prCost.VsphereTotalHours,
-			vsphereCostRate*prCost.VsphereTotalHours, prCost.AzureTotalHours, azureCostRate*prCost.AzureTotalHours)
+			prInfo.TotalCost, prInfo.Org, prInfo.Repo, prInfo.PRNum, prInfo.AWSTotalHours, awsCostRate*prInfo.AWSTotalHours,
+			prInfo.GCPTotalHours, gcpCostRate*prInfo.GCPTotalHours, prInfo.VsphereTotalHours,
+			vsphereCostRate*prInfo.VsphereTotalHours, prInfo.AzureTotalHours, azureCostRate*prInfo.AzureTotalHours)
 	}
 
 }
