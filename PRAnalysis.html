@@ -58,7 +58,11 @@
 <div id="chart-container">
     <canvas id="chart"></canvas>
 </div>
-
+<div id="summary">
+    <h2>Summary</h2>
+    <p id="data-span"></p>
+    <p id="total-cost"></p>
+</div>
 <table id="pr-table" data-sortable>
     <thead>
     <tr>
@@ -74,10 +78,16 @@
 </table>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 <script>
     fetch('./pr_costs.json')
         .then(response => response.json())
         .then(jsonData => {
+
+            // Calculate total cost
+            var totalCost = jsonData.reduce((sum, obj) => sum + obj.TotalCost, 0);
+            document.getElementById('total-cost').textContent = `Total Cost: $${totalCost.toFixed(2)}`;
+
             var table = document.getElementById('pr-table');
 
             // Sort the data by TotalCost in descending order
