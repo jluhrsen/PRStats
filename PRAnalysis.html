@@ -5,8 +5,8 @@
     <style>
         #chart-container {
             width: 100%;
-            max-width: 2400px; /* Adjust the max-width as needed */
-            height: 800px; /* Adjust the height as needed */
+            max-width: 2400px;
+            height: 800px;
             margin: 0 auto;
             display: flex;
             justify-content: center;
@@ -17,7 +17,7 @@
             display: block;
             width: 100%;
             height: 100%;
-            max-width: 100%; /* Adjust the max-width as needed */
+            max-width: 100%;
         }
         table {
             border-collapse: collapse;
@@ -59,7 +59,7 @@
     <canvas id="chart"></canvas>
 </div>
 
-<table id="pr-table">
+<table id="pr-table" data-sortable>
     <thead>
     <tr>
         <th data-sortable>Org</th>
@@ -70,7 +70,7 @@
         <th data-sortable>PRRetestCount</th>
     </tr>
     </thead>
-    <tbody></tbody> <!-- Add the tbody element -->
+    <tbody></tbody>
 </table>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -88,17 +88,14 @@
             var table = document.getElementById('pr-table');
             var tableRows = table.getElementsByTagName('tr');
 
-// Add data-sortable attribute to sortable columns (excluding the first column)
+            // Add data-sortable attribute to sortable columns (excluding the first column)
             var sortableColumns = table.querySelectorAll('th[data-sortable]');
             sortableColumns.forEach(function(column) {
                 column.addEventListener('click', handleSortClick);
             });
 
-// Sort direction constants
             var ASCENDING = 'ascending';
             var DESCENDING = 'descending';
-
-// Initially, no column is sorted
             var sortedColumn = null;
             var sortDirection = ASCENDING;
 
@@ -125,14 +122,15 @@
                     {
                         label: 'Total Cost',
                         backgroundColor: 'rgba(75, 192, 192, 0.5)',
-                        data: topResults.map(obj => obj.TotalCost.toFixed(2))
+                        data: topResults.map(obj => obj.TotalCost.toFixed(2)),
+                        yAxisID: 'y0'
                     }
                 ]
             };
             // Extract PRRetestCount values from JSON data
             var prRetestCountData = jsonData.map(item => item.PRRetestCount);
 
-// Calculate the maximum value of PRRetestCount
+            // Calculate the maximum value of PRRetestCount
             var prRetestCountMax = Math.max(...prRetestCountData);
             var prRetestCountMaxScaled = prRetestCountMax * 1.1; // Apply 10% scaling
 
@@ -142,7 +140,7 @@
                 backgroundColor: 'rgba(255, 99, 132, 0.5)',
                 borderColor: 'rgba(255, 99, 132, 1)',
                 borderWidth: 1,
-                yAxisID: 'y1' // Assigning the right y-axis
+                yAxisID: 'y1'
             };
             var prLifeSpanData = jsonData.map(item => item.PRLifeSpan);
 
@@ -152,13 +150,12 @@
                 backgroundColor: 'rgba(54, 162, 235, 0.5)',
                 borderColor: 'rgba(54, 162, 235, 1)',
                 borderWidth: 1,
-                barPercentage: 0.5, // Adjust the bar height, increase or decrease the value as needed
-                yAxisID: 'y0' // Assigning the left y-axis
+                barPercentage: 0.5,
+                yAxisID: 'y2'
             };
             chartData.datasets.push(prRetestCountDataset);
             chartData.datasets.push(prLifeSpanDataset);
 
-// Render the bar chart
             var ctx = document.getElementById('chart').getContext('2d');
             new Chart(ctx, {
                 type: 'bar',
@@ -169,13 +166,13 @@
                         x: {
                             display: true
                         },
-                        y: {
+                        y0: {
                             type: 'linear',
                             position: 'left',
                             beginAtZero: true,
                             title: {
                                 display: true,
-                                text: 'PR Cost' // Add your desired label here
+                                text: 'PR Cost'
                             },
                             ticks: {
                                 precision: 0,
@@ -189,9 +186,11 @@
                             position: 'right',
                             beginAtZero: true,
                             max: prRetestCountMaxScaled,
-                            title: {
+                            title: {// Render the bar chart
+
                                 display: true,
-                                text: '/retest count' // Add your desired label here
+                                text: '/retest count'// Render the bar chart
+
                             },
                             ticks: {
                                 precision: 0,
@@ -202,7 +201,22 @@
                             grid: {
                                 drawOnChartArea: false
                             }
-                        }
+                        },
+                        y2: {
+                            type: 'linear',
+                            position: 'left',
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'PR Lifespan'
+                            },
+                            ticks: {
+                                precision: 0,
+                                callback: function (value) {
+                                    return value + ' days';
+                                }
+                            }
+                        },
                     },
                     plugins: {
                         title: {
@@ -293,7 +307,7 @@
                 });
             }
 
-// Helper function to parse PRLifeSpan values
+            // Helper function to parse PRLifeSpan values
             function parsePRLifeSpan(value) {
                 var parts = value.split('.');
                 var days = parseInt(parts[0], 10);
