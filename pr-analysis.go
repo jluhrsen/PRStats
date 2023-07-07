@@ -96,7 +96,7 @@ func main() {
 		org, repo, prNum, _ := extractPRInfo(pr.URL)
 		prowJobURL := generateProwJobURL(org, repo, prNum)
 		prJobLinks, _ := parseProwJobURL(prowJobURL)
-		fmt.Printf("%s/%s PR #%d ran jobs:\n", org, repo, prNum)
+		fmt.Printf("%s/%s PR #%d:\n", org, repo, prNum)
 		for _, prJobLink := range prJobLinks {
 			jobInfo := JobInfo{
 				JobURL:   "",
@@ -125,7 +125,7 @@ func main() {
 
 					// Convert the run time to decimal hours
 					decimalHours = float64(hours) + float64(minutes)/60.0
-					fmt.Printf("\t%s/%s for %.2f hours\n", jobName, jobID, decimalHours)
+					// fmt.Printf("\t%s/%s for %.2f hours\n", jobName, jobID, decimalHours)
 				}
 				// remove 30m to estimate the time for actual cloud nodes to be provisioned, just don't let it go
 				// negative
@@ -166,9 +166,14 @@ func main() {
 					// we know we don't care about the "images", "lint", "unit" or "gofmt" jobs
 					if !strings.Contains(prJobLink, "images") && !strings.Contains(prJobLink, "lint") &&
 						!strings.Contains(prJobLink, "unit") && !strings.Contains(prJobLink, "gofmt") {
-						fmt.Printf("Unable to calculate costs for %s\n", prJobLink)
+						// fmt.Printf("Unable to calculate costs for %s\n", prJobLink)
 					}
-					fmt.Printf("Need to calculate a cost for #{prJobLink}\n")
+					fmt.Printf("Unknown job type, cannot calculate costs %s\n", prJobLink)
+					jobInfo = JobInfo{
+						JobURL:   prJobLink,
+						Duration: decimalHours,
+						Cost:     0,
+					}
 				}
 			}
 			PRJobInfo = append(PRJobInfo, jobInfo)
@@ -337,8 +342,6 @@ func getClosedPullRequests(owner, repo string, startTime, endTime time.Time) ([]
 		nextURL := parseLinkHeader(linkHeader)
 		// TODO: this is ugly. need to fix in parseLinkHeader
 		if nextURL["rel=\"next"] == "" {
-			jamo := nextURL["rel=\"next"]
-			fmt.Println(jamo)
 			break
 		}
 
