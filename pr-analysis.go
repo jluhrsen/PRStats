@@ -55,34 +55,43 @@ var (
 )
 
 func main() {
-
 	if len(os.Args) < 4 {
-		fmt.Println("Usage: go run main.go <org> <repo> <start-date> <end-date>")
-		return
+		log.Fatalf("Usage: go run main.go <org> <repo> <start-date> <end-date>")
 	}
 
-	owner := os.Args[1]
-	repo := os.Args[2]
-	startDate := os.Args[3]
-	endDate := os.Args[4]
+	owner, repo, startTime, endTime, err := parseArgs(os.Args[1:])
 
-	startTime, err := time.Parse("01-02-2006", startDate)
 	if err != nil {
-		fmt.Println("Invalid start date:", err)
-		return
-	}
-
-	endTime, err := time.Parse("01-02-2006", endDate)
-	if err != nil {
-		fmt.Println("Invalid end date:", err)
-		return
+		log.Fatalf("Failed to parse arguments: %v", err)
 	}
 
 	pullRequests, err := getClosedPullRequests(owner, repo, startTime, endTime)
 	if err != nil {
-		fmt.Println("Error:", err)
-		return
+		log.Fatalf("Failed to get pull requests: %v", err)
 	}
+
+	processPullRequests(pullRequests, startTime, endTime)
+}
+
+func parseArgs(args []string) (string, string, time.Time, time.Time, error) {
+	owner := args[0]
+	repo := args[1]
+	startDate, err := parseDate(args[2])
+	if err != nil {
+		return "", "", time.Time{}, time.Time{}, fmt.Errorf("invalid start date: %v", err)
+	}
+	endDate, err := parseDate(args[3])
+	if err != nil {
+		return "", "", time.Time{}, time.Time{}, fmt.Errorf("invalid end date: %v", err)
+	}
+	return owner, repo, startDate, endDate, nil
+}
+
+func parseDate(date string) (time.Time, error) {
+	return time.Parse("01-02-2006", date)
+}
+
+func processPullRequests(pullRequests []PullRequest, startTime, endTime time.Time) {
 
 	fmt.Printf("Pull Requests closed between %s and %s:\n", startTime, endTime)
 	for _, pr := range pullRequests {
