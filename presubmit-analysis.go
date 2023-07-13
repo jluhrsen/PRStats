@@ -69,8 +69,6 @@ func main() {
 		if err != nil {
 			log.Fatalf("error: %v", err)
 		}
-		fmt.Printf("Job name: %s, AlwaysRun: %t, Optional: %t\n", job.Name, job.AlwaysRun, job.Optional)
-		fmt.Printf("\t\tSUCCESS count: %d, FAILURE count: %d, ABORTED count: %d, PENDING count: %d\n", successCount, failureCount, abortedCount, pendingCount)
 
 		totalJobCount := successCount + failureCount + abortedCount + pendingCount
 		if totalJobCount != (resultsDepth+1)*20 {
@@ -78,7 +76,7 @@ func main() {
 		}
 		passRate := 0.0
 		if totalJobCount != 0 { // to avoid division by zero
-			passRate = float64(successCount) / float64(totalJobCount)
+			passRate = float64(successCount) / (float64(successCount) + float64(failureCount))
 		}
 
 		jobs[i].SuccessCount = successCount
@@ -87,6 +85,10 @@ func main() {
 		jobs[i].PendingCount = pendingCount
 		jobs[i].PassRate = passRate
 		jobs[i].TotalJobCount = totalJobCount
+
+		fmt.Printf("Job name: %s, AlwaysRun: %t, Optional: %t\n", job.Name, job.AlwaysRun, job.Optional)
+		fmt.Printf("\t\tSUCCESS count: %d, FAILURE count: %d, ABORTED count: %d, PENDING count: %d\n", successCount, failureCount, abortedCount, pendingCount)
+		fmt.Printf("\t\t\tPASS RATE: %.0f%%\n", passRate*100)
 	}
 
 	if err != nil {
