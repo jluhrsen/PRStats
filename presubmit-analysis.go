@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 
 	yaml "gopkg.in/yaml.v2"
@@ -91,8 +92,21 @@ func main() {
 		fmt.Printf("\t\t\tPASS RATE: %.0f%%\n", passRate*100)
 	}
 
+	jsonData, err := json.Marshal(jobs)
 	if err != nil {
-		log.Fatalf("error: %v", err)
+		log.Fatalf("Failed to marshal jobs to JSON: %v", err)
+	}
+
+	// Write JSON data to a file
+	file, err := os.Create("presubmit_jobs.json")
+	if err != nil {
+		log.Fatalf("Failed to create file: %v", err)
+	}
+	defer file.Close()
+
+	_, err = file.Write(jsonData)
+	if err != nil {
+		log.Fatalf("Failed to write JSON data to file: %v", err)
 	}
 
 }
