@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        #chartContainer {
+            width: 100%;
+            height: 400px;
+        }
+
+        #chartContainer2 {
+            width: 100%;
+            height: 400px;
+        }
+    </style>
+</head>
+<body>
+<div id="chartContainer">
+    <canvas id="myChart"></canvas>
+</div>
+<div id="chartContainer2" style="height: 50%">
+    <canvas id="myChart2"></canvas>
+</div>
+<script>
+    fetch('presubmit_jobs.json')
+        .then(response => response.json())
+        .then(data => {
+            // Filter jobs where 'AlwaysRun' is True
+            var filteredDataAlwaysRun = data.filter(job => job.AlwaysRun && !job.Optional);
+
+            // Sort jobs by pass rate
+            filteredDataAlwaysRun.sort((a, b) => b.PassRate - a.PassRate);
+
+            // Extract job names and pass rates
+            var jobNamesAlwaysRun = filteredDataAlwaysRun.map(job => job.Name);
+            var passRatesAlwaysRun = filteredDataAlwaysRun.map(job => job.PassRate);
+
+            // Set the height of the chart container based on the number of jobs (AlwaysRun)
+            var chartContainer = document.getElementById('chartContainer');
+            chartContainer.style.height = (filteredDataAlwaysRun.length * 20) + 'px';  // 20px per job
+
+            var ctx = document.getElementById('myChart').getContext('2d');
+            var gradientFill = ctx.createLinearGradient(0, 0, 0, chartContainer.offsetHeight);
+            gradientFill.addColorStop(0, 'rgba(255, 0, 0, 0.5)');  // Start color (red)
+            gradientFill.addColorStop(1, 'rgba(0, 255, 0, 0.5)');  // End color (green)
+
+            new Chart(ctx, {
+                type: 'bar',  // Use 'bar' type
+                data: {
+                    labels: jobNamesAlwaysRun,
+                    datasets: [{
+                        label: 'Pass Rate (AlwaysRun: true)',
+                        data: passRatesAlwaysRun,
+                        backgroundColor: gradientFill,
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',  // Set indexAxis to 'y' for horizontal bars
+                    responsive: true,  // Make the chart responsive
+                    maintainAspectRatio: false,  // Allow the chart to fill its container
+                    scales: {
+                        x: {
+                            beginAtZero: true,
+                            max: 1,  // Set maximum value for x-axis
+                            ticks: {
+                                // Include a % sign in the ticks
+                                callback: function(value) {
+                                    return (value * 100).toFixed(0) + '%';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Filter jobs where 'AlwaysRun' is False
+            var filteredDataNotAlwaysRun = data.filter(job => job.AlwaysRun && job.Optional);
+
+            // Sort jobs by pass rate
+            filteredDataNotAlwaysRun.sort((a, b) => b.PassRate - a.PassRate);
+
+            // Extract job names and pass rates
+            var jobNamesNotAlwaysRun = filteredDataNotAlwaysRun.map(job => job.Name);
+            var passRatesNotAlwaysRun = filteredDataNotAlwaysRun.map(job => job.PassRate);
+
+            // Set the height of the chart container based on the number of jobs (Not AlwaysRun)
+            var chartContainer2 = document.getElementById('chartContainer2');
+            chartContainer2.style.height = (filteredDataNotAlwaysRun.length * 20) + 'px';  // 20px per job
+
+            var ctx2 = document.getElementById('myChart2').getContext('2d');
+            var gradientFill2 = ctx2.createLinearGradient(0, 0, 0, chartContainer2.offsetHeight);
+            gradientFill2.addColorStop(0, 'rgba(255, 0, 0, 0.5)');  // Start color (red)
+            gradientFill2.addColorStop(1, 'rgba(0, 255, 0, 0.5)');  // End color (green)
+
+            new Chart(ctx2, {
+                type: 'bar',  // Use 'bar' type
+                data: {
+                    labels: jobNamesNotAlwaysRun,
+                    datasets: [{
+                        label: 'Pass Rate (AlwaysRun: false)',
+                        data: passRatesNotAlwaysRun,
+                        backgroundColor: gradientFill2,  // Use gradientFill2 for the fill color
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',  // Set indexAxis to 'y' for horizontal bars
+                    responsive: true,  // Make the chart responsive
+                    maintainAspectRatio: false,  // Allow the chart to fill its container
+                    scales: {
+                        x: {
+                            beginAtZero: true,
+                            max: 1,  // Set maximum value for x-axis
+                            ticks: {
+                                // Include a % sign in the ticks
+                                callback: function(value) {
+                                    return (value * 100).toFixed(0) + '%';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        });
+</script>
+</body>
+</html>
