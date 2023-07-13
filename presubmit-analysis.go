@@ -56,7 +56,7 @@ func main() {
 		// only care about e2e jobs that run on every PR
 		if strings.Contains(job.Name, "e2e") && job.AlwaysRun != false {
 			url := fmt.Sprintf("https://prow.ci.openshift.org/job-history/gs/origin-ci-test/pr-logs/directory/%s?buildId=", job.Name)
-			successCount, failureCount, err := getJobHistory(url)
+			successCount, failureCount, err := getJobHistory(url, 3)
 			if err != nil {
 				log.Fatalf("error: %v", err)
 			}
@@ -71,46 +71,69 @@ func main() {
 
 }
 
-func getJobHistory(url string) (int, int, error) {
-	resp, err := http.Get(url)
-	if err != nil {
-		return 0, 0, err
-	}
-	defer resp.Body.Close()
-
-	doc, err := goquery.NewDocumentFromReader(resp.Body)
-	if err != nil {
-		return 0, 0, err
-	}
-
-	var js string
-	// Find the script tag with `allBuilds` variable
-	doc.Find("script").Each(func(i int, s *goquery.Selection) {
-		if strings.Contains(s.Text(), "var allBuilds") {
-			js = s.Text()
-		}
-	})
-
-	js = strings.TrimSpace(js)
-	js = strings.TrimPrefix(js, "var allBuilds = ")
-	js = strings.TrimSuffix(js, ";")
-
-	// Unmarshal the JSON
-	var builds []Build
-	err = json.Unmarshal([]byte(js), &builds)
-	if err != nil {
-		return 0, 0, err
-	}
-
+func getJobHistory(url string, depth int) (int, int, error) {
 	successCount := 0
 	failureCount := 0
-	for _, build := range builds {
-		if build.Result == "SUCCESS" {
-			successCount++
-		} else if build.Result == "FAILURE" {
-			failureCount++
-		}
+
+	err := processPage(url, &successCount, &failureCount, depth)
+	if err != nil {
+		return 0, 0, err
 	}
 
 	return successCount, failureCount, nil
+}
+
+func processPage(url string, successCount *int, failureCount *int, depth int) error {
+	if depth >= 0 {
+		resp, err := http.Get(url)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		doc, err := goquery.NewDocumentFromReader(resp.Body)
+		if err != nil {
+			return err
+		}
+
+		var js string
+		// Find the script tag with `allBuilds` variable
+		doc.Find("script").Each(func(i int, s *goquery.Selection) {
+			if strings.Contains(s.Text(), "var allBuilds") {
+				js = s.Text()
+			}
+		})
+
+		js = strings.TrimSpace(js)
+		js = strings.TrimPrefix(js, "var allBuilds = ")
+		js = strings.TrimSuffix(js, ";")
+
+		// Unmarshal the JSON
+		var builds []Build
+		err = json.Unmarshal([]byte(js), &builds)
+		if err != nil {
+			return err
+		}
+
+		for _, build := range builds {
+			if build.Result == "SUCCESS" {
+				*successCount++
+			} else if build.Result == "FAILURE" {
+				*failureCount++
+			}
+		}
+
+		// Find "Older Runs" link and process the page it points to
+		doc.Find("a").Each(func(i int, s *goquery.Selection) {
+			if s.Text() == "<- Older Runs" {
+				olderRunsURL, exists := s.Attr("href")
+				if exists {
+					// Prepend the base URL, because the URL is relative
+					olderRunsURL = "https://prow.ci.openshift.org" + olderRunsURL
+					err = processPage(olderRunsURL, successCount, failureCount, depth-1)
+				}
+			}
+		})
+	}
+	return nil
 }
