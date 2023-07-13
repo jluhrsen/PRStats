@@ -15,42 +15,41 @@
     </style>
 </head>
 <body>
-<div id="chartContainer">
-    <canvas id="myChart"></canvas>
+<div id="requiredJobs">
+    <canvas id="Required Jobs"></canvas>
 </div>
-<div id="chartContainer2" style="height: 50%">
-    <canvas id="myChart2"></canvas>
+<div id="optionalJobs" style="height: 50%">
+    <canvas id="Optional Jobs"></canvas>
 </div>
 <script>
     fetch('presubmit_jobs.json')
         .then(response => response.json())
         .then(data => {
-            // Filter jobs where 'AlwaysRun' is True
-            var filteredDataAlwaysRun = data.filter(job => job.AlwaysRun && !job.Optional);
+            // Required Jobs are AlwaysRun:true and Optional:false
+            var filteredDataRequiredJobs = data.filter(job => job.AlwaysRun && !job.Optional);
 
             // Sort jobs by pass rate
-            filteredDataAlwaysRun.sort((a, b) => b.PassRate - a.PassRate);
+            filteredDataRequiredJobs.sort((a, b) => b.PassRate - a.PassRate);
 
-            // Extract job names and pass rates
-            var jobNamesAlwaysRun = filteredDataAlwaysRun.map(job => job.Name);
-            var passRatesAlwaysRun = filteredDataAlwaysRun.map(job => job.PassRate);
+            var jobNames = filteredDataRequiredJobs.map(job => job.Name);
+            var passRates = filteredDataRequiredJobs.map(job => job.PassRate);
 
-            // Set the height of the chart container based on the number of jobs (AlwaysRun)
-            var chartContainer = document.getElementById('chartContainer');
-            chartContainer.style.height = (filteredDataAlwaysRun.length * 20) + 'px';  // 20px per job
+            // Set the height of the chart container based on the number of requiredJobs
+            var requiredJobs = document.getElementById('requiredJobs');
+            requiredJobs.style.height = (filteredDataRequiredJobs.length * 20) + 'px';
 
-            var ctx = document.getElementById('myChart').getContext('2d');
-            var gradientFill = ctx.createLinearGradient(0, 0, 0, chartContainer.offsetHeight);
+            var ctx = document.getElementById('Required Jobs').getContext('2d');
+            var gradientFill = ctx.createLinearGradient(0, 0, 0, requiredJobs.offsetHeight);
             gradientFill.addColorStop(0, 'rgba(255, 0, 0, 0.5)');  // Start color (red)
             gradientFill.addColorStop(1, 'rgba(0, 255, 0, 0.5)');  // End color (green)
 
             new Chart(ctx, {
                 type: 'bar',  // Use 'bar' type
                 data: {
-                    labels: jobNamesAlwaysRun,
+                    labels: jobNames,
                     datasets: [{
-                        label: 'Pass Rate (AlwaysRun: true)',
-                        data: passRatesAlwaysRun,
+                        label: 'Required Jobs',
+                        data: passRates,
                         backgroundColor: gradientFill,
                         borderColor: 'rgba(75, 192, 192, 1)',
                         borderWidth: 1
@@ -75,32 +74,31 @@
                 }
             });
 
-            // Filter jobs where 'AlwaysRun' is False
-            var filteredDataNotAlwaysRun = data.filter(job => job.AlwaysRun && job.Optional);
+            // Optional jobs are AlwaysRun:true and Optional:true
+            var filteredDataOptionalJobs = data.filter(job => job.AlwaysRun && job.Optional);
 
             // Sort jobs by pass rate
-            filteredDataNotAlwaysRun.sort((a, b) => b.PassRate - a.PassRate);
+            filteredDataOptionalJobs.sort((a, b) => b.PassRate - a.PassRate);
 
-            // Extract job names and pass rates
-            var jobNamesNotAlwaysRun = filteredDataNotAlwaysRun.map(job => job.Name);
-            var passRatesNotAlwaysRun = filteredDataNotAlwaysRun.map(job => job.PassRate);
+            var jobNames = filteredDataOptionalJobs.map(job => job.Name);
+            var passRates = filteredDataOptionalJobs.map(job => job.PassRate);
 
-            // Set the height of the chart container based on the number of jobs (Not AlwaysRun)
-            var chartContainer2 = document.getElementById('chartContainer2');
-            chartContainer2.style.height = (filteredDataNotAlwaysRun.length * 20) + 'px';  // 20px per job
+            // Set the height of the chart container based on the number of optionalJobs
+            var optionalJobs = document.getElementById('optionalJobs');
+            optionalJobs.style.height = (filteredDataOptionalJobs.length * 20) + 'px';
 
-            var ctx2 = document.getElementById('myChart2').getContext('2d');
-            var gradientFill2 = ctx2.createLinearGradient(0, 0, 0, chartContainer2.offsetHeight);
+            var ctx2 = document.getElementById('Optional Jobs').getContext('2d');
+            var gradientFill2 = ctx2.createLinearGradient(0, 0, 0, optionalJobs.offsetHeight);
             gradientFill2.addColorStop(0, 'rgba(255, 0, 0, 0.5)');  // Start color (red)
             gradientFill2.addColorStop(1, 'rgba(0, 255, 0, 0.5)');  // End color (green)
 
             new Chart(ctx2, {
                 type: 'bar',  // Use 'bar' type
                 data: {
-                    labels: jobNamesNotAlwaysRun,
+                    labels: jobNames,
                     datasets: [{
-                        label: 'Pass Rate (AlwaysRun: false)',
-                        data: passRatesNotAlwaysRun,
+                        label: 'Optional Jobs',
+                        data: passRates,
                         backgroundColor: gradientFill2,  // Use gradientFill2 for the fill color
                         borderColor: 'rgba(75, 192, 192, 1)',
                         borderWidth: 1
