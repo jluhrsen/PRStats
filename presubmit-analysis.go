@@ -62,7 +62,7 @@ func main() {
 		}
 	}
 
-	resultsDepth := 1
+	resultsDepth := 2
 
 	for i, job := range jobs {
 		url := fmt.Sprintf("https://prow.ci.openshift.org/job-history/gs/origin-ci-test/pr-logs/directory/%s?buildId=", job.Name)

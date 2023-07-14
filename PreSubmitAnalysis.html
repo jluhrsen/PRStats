@@ -2,41 +2,35 @@
 <html>
 <head>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        #chartContainer {
-            width: 100%;
-            height: 400px;
-        }
-
-        #chartContainer2 {
-            width: 100%;
-            height: 400px;
-        }
-    </style>
 </head>
 <body>
 <div id="requiredJobs">
-    <canvas id="Required Jobs"></canvas>
+    <canvas id="Required Jobs" height="500" width="2000"></canvas>
 </div>
 <div id="optionalJobs" style="height: 50%">
-    <canvas id="Optional Jobs"></canvas>
+    <canvas id="Optional Jobs" height="500" width="2000"></canvas>
 </div>
 <script>
     fetch('presubmit_jobs.json')
         .then(response => response.json())
         .then(data => {
+            // get all jobs
+            var allJobs = data.filter(job => job.Name)
+            var maxJobNameLength = Math.max(...allJobs.map(job => job.Name.length));
+
             // Required Jobs are AlwaysRun:true and Optional:false
             var filteredDataRequiredJobs = data.filter(job => job.AlwaysRun && !job.Optional);
 
             // Sort jobs by pass rate
             filteredDataRequiredJobs.sort((a, b) => b.PassRate - a.PassRate);
 
-            var jobNames = filteredDataRequiredJobs.map(job => job.Name);
+            var jobNames = filteredDataRequiredJobs.map(job => job.Name.padStart(maxJobNameLength, '_'));
             var passRates = filteredDataRequiredJobs.map(job => job.PassRate);
 
             // Set the height of the chart container based on the number of requiredJobs
             var requiredJobs = document.getElementById('requiredJobs');
             requiredJobs.style.height = (filteredDataRequiredJobs.length * 20) + 'px';
+            requiredJobs.style.width = '2000px'
 
             var ctx = document.getElementById('Required Jobs').getContext('2d');
             var gradientFill = ctx.createLinearGradient(0, 0, 0, requiredJobs.offsetHeight);
@@ -62,15 +56,14 @@
                     scales: {
                         x: {
                             beginAtZero: true,
-                            max: 1,  // Set maximum value for x-axis
+                            max: 1,
                             ticks: {
-                                // Include a % sign in the ticks
                                 callback: function(value) {
                                     return (value * 100).toFixed(0) + '%';
                                 }
                             }
                         }
-                    }
+                    },
                 }
             });
 
@@ -80,12 +73,13 @@
             // Sort jobs by pass rate
             filteredDataOptionalJobs.sort((a, b) => b.PassRate - a.PassRate);
 
-            var jobNames = filteredDataOptionalJobs.map(job => job.Name);
+            var jobNames = filteredDataOptionalJobs.map(job => job.Name.padStart(maxJobNameLength, '_'));
             var passRates = filteredDataOptionalJobs.map(job => job.PassRate);
 
             // Set the height of the chart container based on the number of optionalJobs
             var optionalJobs = document.getElementById('optionalJobs');
             optionalJobs.style.height = (filteredDataOptionalJobs.length * 20) + 'px';
+            optionalJobs.style.width = '2000px'
 
             var ctx2 = document.getElementById('Optional Jobs').getContext('2d');
             var gradientFill2 = ctx2.createLinearGradient(0, 0, 0, optionalJobs.offsetHeight);
@@ -111,9 +105,8 @@
                     scales: {
                         x: {
                             beginAtZero: true,
-                            max: 1,  // Set maximum value for x-axis
+                            max: 1,
                             ticks: {
-                                // Include a % sign in the ticks
                                 callback: function(value) {
                                     return (value * 100).toFixed(0) + '%';
                                 }
