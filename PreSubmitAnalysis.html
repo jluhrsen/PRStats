@@ -34,8 +34,8 @@
 
             var ctx = document.getElementById('Required Jobs').getContext('2d');
             var gradientFill = ctx.createLinearGradient(0, 0, 0, requiredJobs.offsetHeight);
-            gradientFill.addColorStop(0, 'rgba(255, 0, 0, 0.5)');  // Start color (red)
-            gradientFill.addColorStop(1, 'rgba(0, 255, 0, 0.5)');  // End color (green)
+            gradientFill.addColorStop(1, 'rgba(255, 0, 0, 0.5)');  // End color (red)
+            gradientFill.addColorStop(0, 'rgba(0, 255, 0, 0.5)');  // Start color (green)
 
             new Chart(ctx, {
                 type: 'bar',  // Use 'bar' type
@@ -83,8 +83,8 @@
 
             var ctx2 = document.getElementById('Optional Jobs').getContext('2d');
             var gradientFill2 = ctx2.createLinearGradient(0, 0, 0, optionalJobs.offsetHeight);
-            gradientFill2.addColorStop(0, 'rgba(255, 0, 0, 0.5)');  // Start color (red)
-            gradientFill2.addColorStop(1, 'rgba(0, 255, 0, 0.5)');  // End color (green)
+            gradientFill2.addColorStop(1, 'rgba(255, 0, 0, 0.5)');  // End color (red)
+            gradientFill2.addColorStop(0, 'rgba(0, 255, 0, 0.5)');  // Start color (green)
 
             new Chart(ctx2, {
                 type: 'bar',  // Use 'bar' type
