@@ -8,104 +8,109 @@
             font-size: 14px;
             text-anchor: middle;
         }
-        <style>
-         .tooltip {
-             position: absolute;
-             background-color: white;
-             padding: 5px;
-             border: 1px solid black;
-             border-radius: 5px;
-             pointer-events: none;  // to prevent the tooltip itself from triggering mouse events
-         }
-        </style>
-
+        .tooltip {
+            position: absolute;
+            background-color: white;
+            padding: 5px;
+            border: 1px solid black;
+            border-radius: 5px;
+            pointer-events: none;  // to prevent the tooltip itself from triggering mouse events
+        }
     </style>
 </head>
 <body>
 <svg id="myChart"></svg>
-<div id="tooltip" class="tooltip" style="opacity:0;"></div>
+<svg id="myChart2"></svg>
+<div id="tooltip1" class="tooltip" style="opacity:0;"></div>
+<div id="tooltip2" class="tooltip" style="opacity:0;"></div>
 
 <script>
     window.onload = function() {
         d3.json('presubmit_jobs.json').then(data => {
             var requiredJobs = data.filter(job => job.AlwaysRun && !job.Optional);
+            var optionalJobs = data.filter(job => job.Optional);
+
             requiredJobs.sort((a, b) => b.PassRate - a.PassRate);
+            optionalJobs.sort((a, b) => b.PassRate - a.PassRate);
 
-            var barData = requiredJobs.map(job => ({
-                jobName: job.Name,
-                passRate: job.PassRate
-            }));
+            createChart(requiredJobs, "myChart", "tooltip1", 500);
+            createChart(optionalJobs, "myChart2", "tooltip2", 600);
+        });
+    }
 
+    function createChart(jobs, chartId, tooltipId, chartHeight) {
+        var barData = jobs.map(job => ({
+            jobName: job.Name,
+            passRate: job.PassRate
+        }));
 
-            var jobNames = requiredJobs.map(job => job.Name);
-            var passRates = requiredJobs.map(job => job.PassRate);
+        var jobNames = jobs.map(job => job.Name);
+        var passRates = jobs.map(job => job.PassRate);
 
-            var margin = {top: 20, right: 20, bottom: 300, left: 40},
-                width = 2000 - margin.left - margin.right,
-                height = 500;  // fixed height, independent of margins
+        var margin = {top: 20, right: 20, bottom: 300, left: 40},
+            width = 2000 - margin.left - margin.right,
+            height = chartHeight;
 
-            var x = d3.scaleBand()
-                .range([0, width])
-                .padding(0.1)
-                .domain(jobNames);
+        var x = d3.scaleBand()
+            .range([0, width])
+            .padding(0.1)
+            .domain(jobNames);
 
-            var y = d3.scaleLinear()
-                .range([height, 0])
-                .domain([0, 1]);  // The domain is [0, 1] since the pass rates are percentages
+        var y = d3.scaleLinear()
+            .range([height, 0])
+            .domain([0, 1]);  // The domain is [0, 1] since the pass rates are percentages
 
-            var svg = d3.select("#myChart")
-                .attr("width", width + margin.left + margin.right)
-                .attr("height", height + margin.top + margin.bottom)
-                .append("g")
-                .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+        var svg = d3.select("#" + chartId)
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom)
+            .append("g")
+            .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
 
-            var defs = svg.append("defs");
+        // Define gradient
+        var defs = svg.append("defs");
+        var gradient = defs.append("linearGradient")
+            .attr("id", "svgGradient" + chartId) // Making the gradient ID unique for each chart
+            .attr("x1", "0%")
+            .attr("x2", "0%")
+            .attr("y1", "100%")
+            .attr("y2", "0%");
 
-            var gradient = defs.append("linearGradient")
-                .attr("id", "svgGradient")
-                .attr("x1", "0%")
-                .attr("x2", "0%")
-                .attr("y1", "100%")
-                .attr("y2", "0%");
+        gradient.append("stop")
+            .attr('class', 'start')
+            .attr("offset", "0%")
+            .attr("stop-color", "green")
+            .attr("stop-opacity", 1);
 
-            gradient.append("stop")
-                .attr('class', 'start')
-                .attr("offset", "0%")
-                .attr("stop-color", "green")
-                .attr("stop-opacity", 1);
+        gradient.append("stop")
+            .attr('class', 'end')
+            .attr("offset", "100%")
+            .attr("stop-color", "red")
+            .attr("stop-opacity", 1);
 
-            gradient.append("stop")
-                .attr('class', 'end')
-                .attr("offset", "75%")
-                .attr("stop-color", "red")
-                .attr("stop-opacity", 1);
-
-            var tooltip = d3.select("#tooltip");  // Select the tooltip that's already in the HTML
-
-            // Add the rectangles and set their properties
-            svg.selectAll(".bar")
-                .data(barData)
-                .enter().append("rect")
-                .attr("class", "bar")
-                .attr("x", function(d) { return x(d.jobName); })
-                .attr("width", x.bandwidth())
-                .attr("y", function(d) { return y(d.passRate); })
-                .attr("height", function(d) { return height - y(d.passRate); })
-                .style("fill", "url(#svgGradient)")
-                .on("mouseover", function(event, d) {
-                    svg.append("text")
-                        .attr("id", "tooltip")
-                        .attr("x", width / 2)
-                        .attr("y", height / 2)
-                        .attr("text-anchor", "middle")
-                        .attr("font-family", "Comic Sans MS")  // Use a sans-serif font
-                        .attr("font-size", "50px")  // Set the font size to 20 pixels
-                        .attr("fill", "black")  // Set the text color to blue
-                        .text(d.jobName);
-                })
-                .on("mouseout", function(d) {
-                    svg.select("#tooltip").remove();
-                });
+        // Add the rectangles and set their properties
+        svg.selectAll(".bar")
+            .data(barData)
+            .enter().append("rect")
+            .attr("class", "bar")
+            .attr("x", function(d) { return x(d.jobName); })
+            .attr("width", x.bandwidth())
+            .attr("y", function(d) { return y(d.passRate); })
+            .attr("height", function(d) { return height - y(d.passRate); })
+            .style("fill", "url(#svgGradient" + chartId + ")") // Refer to the defined gradient ID
+            .on("mouseover", function(event, d) {
+                svg.append("text")
+                    .attr("id", tooltipId)
+                    .attr("x", width / 2)
+                    .attr("y", height / 2)
+                    .attr("text-anchor", "middle")
+                    .attr("font-family", "Comic Sans MS")
+                    .attr("font-size", "50px")
+                    .attr("fill", "black")
+                    .text(d.jobName);
+            })
+            .on("mouseout", function(d) {
+                svg.select("#" + tooltipId).remove();
+            });
 
 
 
@@ -129,8 +134,7 @@
                 .attr("class", "bar-label")
                 .attr("x", function(d, i) { return x(jobNames[i]) + x.bandwidth() / 2; })
                 .attr("y", function(d) { return y(d) - 5; });
-        });
-    }
+        }
 </script>
 </body>
 </html>
