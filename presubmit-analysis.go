@@ -34,7 +34,14 @@ type Build struct {
 }
 
 func main() {
-	resp, err := http.Get("https://raw.githubusercontent.com/openshift/release/master/ci-operator/jobs/openshift/ovn-kubernetes/openshift-ovn-kubernetes-master-presubmits.yaml")
+	if len(os.Args) < 2 {
+		log.Fatal("Please provide the project name for presubmit analysis.")
+	}
+
+	project := os.Args[1]
+
+	url := fmt.Sprintf("https://raw.githubusercontent.com/openshift/release/master/ci-operator/jobs/openshift/%s/openshift-%s-master-presubmits.yaml", project, project)
+	resp, err := http.Get(url)
 	if err != nil {
 		log.Fatalf("error: %v", err)
 	}
@@ -62,6 +69,7 @@ func main() {
 		}
 	}
 
+	// how many pages of results to look at (20 per page)
 	resultsDepth := 2
 
 	for i, job := range jobs {
