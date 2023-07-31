@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -112,36 +113,12 @@ func processPullRequests(pullRequests []PullRequest, startTime, endTime time.Tim
 				Duration: 0,
 				Cost:     0,
 			}
-			decimalHours := 0.0
 			if strings.Contains(prJobLink, "aws") || strings.Contains(prJobLink, "gcp") || strings.Contains(prJobLink, "vsphere") {
 				parsedPrJobUrl, _ := url.Parse(prJobLink)
 				pathSegments := strings.Split(parsedPrJobUrl.Path, "/")
 				jobID := pathSegments[len(pathSegments)-1]
 				jobName := pathSegments[len(pathSegments)-2]
-				buildLogURL := fmt.Sprintf("https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/origin-ci-test/pr-logs/pull/%s_%s/%d/%s/%s/build-log.txt", org, repo, prNum, jobName, jobID)
-				resp, _ := http.Get(buildLogURL)
-				// TODO: add error checking here ^^ and below
-				body, _ := io.ReadAll(resp.Body)
-				buildLogContent := string(body)
-				runTimePattern := `Ran for (\d+)h(\d+)m`
-				regex := regexp.MustCompile(runTimePattern)
-				match := regex.FindStringSubmatch(buildLogContent)
-				if len(match) < 3 {
-					fmt.Errorf("failed to extract run time from build log")
-				} else {
-					hours, _ := strconv.Atoi(match[1])
-					minutes, _ := strconv.Atoi(match[2])
-
-					// Convert the run time to decimal hours
-					decimalHours = float64(hours) + float64(minutes)/60.0
-					// fmt.Printf("\t%s/%s for %.2f hours\n", jobName, jobID, decimalHours)
-				}
-				// remove 30m to estimate the time for actual cloud nodes to be provisioned, just don't let it go
-				// negative
-				decimalHours -= 0.5
-				if decimalHours < 0.0 {
-					decimalHours = 0.0
-				}
+				decimalHours := getJobRunTime(org, repo, prNum, jobName, jobID)
 
 				if strings.Contains(prJobLink, "aws") {
 					awsTotalHours += decimalHours
@@ -260,6 +237,7 @@ func processPullRequests(pullRequests []PullRequest, startTime, endTime time.Tim
 	}
 
 }
+
 func generateProwJobURL(org, repo string, prNum int) string {
 	baseURL := "https://prow.ci.openshift.org/pr-history/?org=%s&repo=%s&pr=%d"
 	return fmt.Sprintf(baseURL, org, repo, prNum)
@@ -436,4 +414,48 @@ func countRetestsInComments(text string, targetStrings ...string) int {
 	}
 
 	return count
+}
+
+func getJobRunTime(org, repo string, prNum int, jobName, jobID string) float64 {
+
+	startJsonUrl := fmt.Sprintf("https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/origin-ci-test/pr-logs/pull/%s_%s/%d/%s/%s/started.json", org, repo, prNum, jobName, jobID)
+	finishJsonUrl := fmt.Sprintf("https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/origin-ci-test/pr-logs/pull/%s_%s/%d/%s/%s/finished.json", org, repo, prNum, jobName, jobID)
+	startInfo, err := http.Get(startJsonUrl)
+	if err != nil {
+		log.Fatalf("Failed to get start info: %v", err)
+	}
+	defer startInfo.Body.Close()
+	finishInfo, err := http.Get(finishJsonUrl)
+	if err != nil {
+		log.Fatalf("Failed to get finish info: %v", err)
+	}
+	defer finishInfo.Body.Close()
+	startBody, _ := io.ReadAll(startInfo.Body)
+	finishBody, _ := io.ReadAll(finishInfo.Body)
+
+	var result map[string]interface{}
+
+	err = json.Unmarshal([]byte(startBody), &result)
+	if err != nil {
+		log.Fatalf("could not find start timestamp in json. Err: %v\n%s %s %d %s %s", err, org, repo, prNum, jobName, jobID)
+	}
+	startTime := result["timestamp"]
+	err = json.Unmarshal([]byte(finishBody), &result)
+	if err != nil {
+		log.Fatalf("could not find end timestamp in json. Err: %v\n%s %s %d %s %s", err, org, repo, prNum, jobName, jobID)
+	}
+	endTime := result["timestamp"]
+
+	jobRunTime := endTime.(float64) - startTime.(float64)
+	jobRunTimeHours := jobRunTime / 3600
+
+	// remove 30m to estimate the time for actual cloud nodes to be provisioned, just don't let it go negative
+	jobRunTimeHours -= 0.5
+	if jobRunTimeHours < 0.0 {
+		jobRunTimeHours = 0.0
+	}
+
+	// round the duration to one decimal point
+	return math.Round(jobRunTimeHours*10) / 10
+
 }
