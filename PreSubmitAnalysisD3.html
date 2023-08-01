@@ -29,7 +29,6 @@
     window.onload = function() {
         var jsonFiles = ["./data/presubmit_jobs_ovn.json", "./data/presubmit_jobs_cno.json"];
 
-        // Load all the data first
         var dataPromises = jsonFiles.map(file => d3.json(file));
         Promise.all(dataPromises).then(allData => {
             // Find the maximum number of data points across all datasets
@@ -52,18 +51,15 @@
                 requiredJobs.sort((a, b) => b.PassRate - a.PassRate);
                 optionalJobs.sort((a, b) => b.PassRate - a.PassRate);
 
-                // Create unique IDs for the charts and tooltips
                 var chartId1 = "myChart" + (index * 2 + 1);
                 var chartId2 = "myChart" + (index * 2 + 2);
                 var tooltipId1 = "tooltip" + (index * 2 + 1);
                 var tooltipId2 = "tooltip" + (index * 2 + 2);
                 var labelId = "label" + index;
 
-                // Append SVG elements to the body for the charts
                 var svg1 = d3.select("body").append("svg").attr("id", chartId1);
                 var svg2 = d3.select("body").append("svg").attr("id", chartId2);
 
-                // Append div elements to the body for the tooltips
                 var tooltip1 = d3.select("body").append("div").attr("id", tooltipId1).attr("class", "tooltip").style("opacity", 0);
                 var tooltip2 = d3.select("body").append("div").attr("id", tooltipId2).attr("class", "tooltip").style("opacity", 0);
 
@@ -77,19 +73,19 @@
     function createChart(jobs, chartId, tooltipId, chartHeight, maxDataPoints, title) {
         // Calculate the width of the bars and the SVG based on the maximum number of bars
         var margin = {top: 20, right: 20, bottom: 300, left: 40},
-            barWidth = 20, // Keep the bar width the same
+            barWidth = 20,
             barSpace = 15,
             width = maxDataPoints * (barWidth + barSpace) * 2,
             height = chartHeight;
 
         var x = d3.scaleBand()
             .range([0, width])
-            .paddingInner(barSpace / (barWidth + barSpace)) // Space between bars as a fraction of the total space allocated for each bar (including the bar itself)
-            .paddingOuter(0) // No extra padding at the ends
+            .paddingInner(barSpace / (barWidth + barSpace))
+            .paddingOuter(0)
             .domain(d3.range(maxDataPoints));
 
         var x = d3.scaleBand()
-            .range([0, width]) // Set the range based on the calculated width
+            .range([0, width])
             .padding(0.1)
             .domain(jobs);
 
@@ -102,7 +98,7 @@
         var passRates = jobs.map(job => job.PassRate);
 
         var x = d3.scaleBand()
-            .range([0, width]) // Set the range based on the calculated width
+            .range([0, width])
             .padding(0.1)
             .domain(jobNames);
 
@@ -111,7 +107,7 @@
             .domain([0, 1]);  // The domain is [0, 1] since the pass rates are percentages
 
         var svg = d3.select("#" + chartId)
-            .attr("width", width + margin.left + margin.right) // Use the calculated width here
+            .attr("width", width + margin.left + margin.right)
             .attr("height", height + margin.top + margin.bottom)
             .append("g")
             .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
@@ -137,16 +133,15 @@
             .attr("stop-color", "red")
             .attr("stop-opacity", 1);
 
-        // Add the rectangles and set their properties
         svg.selectAll(".bar")
             .data(barData)
             .enter().append("rect")
             .attr("class", "bar")
-            .attr("x", function(d, i) { return i * (barWidth + barSpace); }) // Set the x attribute to be the index multiplied by the width of a single bar (including its space)
-            .attr("width", barWidth) // Set the width of the bar to be the fixed barWidth
+            .attr("x", function(d, i) { return i * (barWidth + barSpace); })
+            .attr("width", barWidth)
             .attr("y", function(d) { return y(d.passRate); })
             .attr("height", function(d) { return height - y(d.passRate); })
-            .style("fill", "url(#svgGradient" + chartId + ")") // Refer to the defined gradient ID
+            .style("fill", "url(#svgGradient" + chartId + ")")
             .on("mouseover", function(event, d) {
                 svg.append("text")
                     .attr("id", tooltipId)
@@ -154,7 +149,7 @@
                     .attr("y", height / 2)
                     .attr("text-anchor", "middle")
                     .attr("font-family", "Comic Sans MS")
-                    .attr("font-size", "50px")
+                    .attr("font-size", "30px")
                     .attr("fill", "black")
                     .text(d.jobName);
             })
