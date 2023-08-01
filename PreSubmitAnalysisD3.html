@@ -16,29 +16,83 @@
             border-radius: 5px;
             pointer-events: none;  // to prevent the tooltip itself from triggering mouse events
         }
+        .file-label {
+            font-size: 20px;
+            font-weight: bold;
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
     </style>
 </head>
 <body>
-<svg id="myChart"></svg>
-<svg id="myChart2"></svg>
-<div id="tooltip1" class="tooltip" style="opacity:0;"></div>
-<div id="tooltip2" class="tooltip" style="opacity:0;"></div>
-
 <script>
     window.onload = function() {
-        d3.json('presubmit_jobs.json').then(data => {
-            var requiredJobs = data.filter(job => job.AlwaysRun && !job.Optional);
-            var optionalJobs = data.filter(job => job.Optional);
+        var jsonFiles = ["./data/presubmit_jobs_ovn.json", "./data/presubmit_jobs_cno.json"];
 
-            requiredJobs.sort((a, b) => b.PassRate - a.PassRate);
-            optionalJobs.sort((a, b) => b.PassRate - a.PassRate);
+        // Load all the data first
+        var dataPromises = jsonFiles.map(file => d3.json(file));
+        Promise.all(dataPromises).then(allData => {
+            // Find the maximum number of data points across all datasets
+            var maxDataPoints = Math.max(...allData.map(data => Math.max(data.filter(job => job.AlwaysRun && !job.Optional).length, data.filter(job => job.Optional).length)));
 
-            createChart(requiredJobs, "myChart", "tooltip1", 500);
-            createChart(optionalJobs, "myChart2", "tooltip2", 600);
+            // Iterate over the data to create the charts
+            allData.forEach((data, index) => {
+                var requiredJobs = data.filter(job => job.AlwaysRun && !job.Optional);
+                var optionalJobs = data.filter(job => job.Optional);
+                var projectName = jsonFiles[index].match(/presubmit_jobs_(\w+)\.json/)[1].toUpperCase();
+
+                // Pad the datasets with empty data points
+                while (requiredJobs.length < maxDataPoints) {
+                    requiredJobs.push({Name: "", PassRate: 0, AlwaysRun: true, Optional: false});
+                }
+                while (optionalJobs.length < maxDataPoints) {
+                    optionalJobs.push({Name: "", PassRate: 0, AlwaysRun: false, Optional: true});
+                }
+
+                requiredJobs.sort((a, b) => b.PassRate - a.PassRate);
+                optionalJobs.sort((a, b) => b.PassRate - a.PassRate);
+
+                // Create unique IDs for the charts and tooltips
+                var chartId1 = "myChart" + (index * 2 + 1);
+                var chartId2 = "myChart" + (index * 2 + 2);
+                var tooltipId1 = "tooltip" + (index * 2 + 1);
+                var tooltipId2 = "tooltip" + (index * 2 + 2);
+                var labelId = "label" + index;
+
+                // Append SVG elements to the body for the charts
+                var svg1 = d3.select("body").append("svg").attr("id", chartId1);
+                var svg2 = d3.select("body").append("svg").attr("id", chartId2);
+
+                // Append div elements to the body for the tooltips
+                var tooltip1 = d3.select("body").append("div").attr("id", tooltipId1).attr("class", "tooltip").style("opacity", 0);
+                var tooltip2 = d3.select("body").append("div").attr("id", tooltipId2).attr("class", "tooltip").style("opacity", 0);
+
+                // Create the charts
+                createChart(requiredJobs, chartId1, tooltipId1, 500, maxDataPoints, projectName + " - Required");
+                createChart(optionalJobs, chartId2, tooltipId2, 500, maxDataPoints, projectName + " - Optional");
+            });
         });
     }
 
-    function createChart(jobs, chartId, tooltipId, chartHeight) {
+    function createChart(jobs, chartId, tooltipId, chartHeight, maxDataPoints, title) {
+        // Calculate the width of the bars and the SVG based on the maximum number of bars
+        var margin = {top: 20, right: 20, bottom: 300, left: 40},
+            barWidth = 20, // Keep the bar width the same
+            barSpace = 15,
+            width = maxDataPoints * (barWidth + barSpace) * 2,
+            height = chartHeight;
+
+        var x = d3.scaleBand()
+            .range([0, width])
+            .paddingInner(barSpace / (barWidth + barSpace)) // Space between bars as a fraction of the total space allocated for each bar (including the bar itself)
+            .paddingOuter(0) // No extra padding at the ends
+            .domain(d3.range(maxDataPoints));
+
+        var x = d3.scaleBand()
+            .range([0, width]) // Set the range based on the calculated width
+            .padding(0.1)
+            .domain(jobs);
+
         var barData = jobs.map(job => ({
             jobName: job.Name,
             passRate: job.PassRate
@@ -47,12 +101,8 @@
         var jobNames = jobs.map(job => job.Name);
         var passRates = jobs.map(job => job.PassRate);
 
-        var margin = {top: 20, right: 20, bottom: 300, left: 40},
-            width = 2000 - margin.left - margin.right,
-            height = chartHeight;
-
         var x = d3.scaleBand()
-            .range([0, width])
+            .range([0, width]) // Set the range based on the calculated width
             .padding(0.1)
             .domain(jobNames);
 
@@ -61,7 +111,7 @@
             .domain([0, 1]);  // The domain is [0, 1] since the pass rates are percentages
 
         var svg = d3.select("#" + chartId)
-            .attr("width", width + margin.left + margin.right)
+            .attr("width", width + margin.left + margin.right) // Use the calculated width here
             .attr("height", height + margin.top + margin.bottom)
             .append("g")
             .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
@@ -92,8 +142,8 @@
             .data(barData)
             .enter().append("rect")
             .attr("class", "bar")
-            .attr("x", function(d) { return x(d.jobName); })
-            .attr("width", x.bandwidth())
+            .attr("x", function(d, i) { return i * (barWidth + barSpace); }) // Set the x attribute to be the index multiplied by the width of a single bar (including its space)
+            .attr("width", barWidth) // Set the width of the bar to be the fixed barWidth
             .attr("y", function(d) { return y(d.passRate); })
             .attr("height", function(d) { return height - y(d.passRate); })
             .style("fill", "url(#svgGradient" + chartId + ")") // Refer to the defined gradient ID
@@ -112,29 +162,28 @@
                 svg.select("#" + tooltipId).remove();
             });
 
+        var yAxis = d3.axisLeft(y).tickFormat(d3.format(".0%"));
+        svg.append("g").call(yAxis);
+
+        svg.append("text")
+            .attr("x", (width / 2))
+            .attr("y", 0 + (margin.top))
+            .attr("text-anchor", "middle")
+            .style("font-size", "50px")
+            .style("font-weight", "bold")
+            .text(title);
 
 
-            svg.append("g")
-                .attr("transform", "translate(0," + height + ")")
-                .call(d3.axisBottom(x))
-                .selectAll("text")
-                .style("text-anchor", "end")
-                .attr("dx", "-.8em")
-                .attr("dy", ".15em")
-                .attr("transform", "rotate(-75)");
+        svg.selectAll(".bar-label")
+            .data(barData)
+            .enter()
+            .append("text")
+            .text(function(d) { return d.jobName ? (d.passRate * 100).toFixed(0) + '%' : ''; }) // Only display the label if jobName is not empty
+            .attr("class", "bar-label")
+            .attr("x", function(d, i) { return i * (barWidth + barSpace) + barWidth / 2; }) // Align the labels with the bars
+            .attr("y", function(d) { return y(d.passRate) - 5; });
 
-            svg.append("g")
-                .call(d3.axisLeft(y));
-
-            svg.selectAll(".bar-label")
-                .data(passRates)
-                .enter()
-                .append("text")
-                .text(function(d) { return (d * 100).toFixed(0) + '%'; })
-                .attr("class", "bar-label")
-                .attr("x", function(d, i) { return x(jobNames[i]) + x.bandwidth() / 2; })
-                .attr("y", function(d) { return y(d) - 5; });
-        }
+    }
 </script>
 </body>
 </html>
