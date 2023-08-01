@@ -94,102 +94,114 @@ func parseDate(date string) (time.Time, error) {
 
 func processPullRequests(pullRequests []PullRequest, startTime, endTime time.Time) {
 
+	const maxGoroutines = 10
+	semaphore := make(chan struct{}, maxGoroutines)
+
+	prInfoChan := make(chan PRInfo, len(pullRequests))
+
 	fmt.Printf("Pull Requests closed between %s and %s:\n", startTime, endTime)
 	for _, pr := range pullRequests {
-		var PRJobInfo []JobInfo
+		semaphore <- struct{}{}
 
-		awsTotalHours := 0.0
-		gcpTotalHours := 0.0
-		vsphereTotalHours := 0.0
-		azureTotalHours := 0.0
+		go func(pr PullRequest) {
+			var PRJobInfo []JobInfo
 
-		org, repo, prNum, _ := extractPRInfo(pr.URL)
-		prowJobURL := generateProwJobURL(org, repo, prNum)
-		prJobLinks, _ := parseProwJobURL(prowJobURL)
-		fmt.Printf("%s/%s PR #%d:\n", org, repo, prNum)
-		for _, prJobLink := range prJobLinks {
-			jobInfo := JobInfo{
-				JobURL:   "",
-				Duration: 0,
-				Cost:     0,
-			}
-			if strings.Contains(prJobLink, "aws") || strings.Contains(prJobLink, "gcp") || strings.Contains(prJobLink, "vsphere") {
-				parsedPrJobUrl, _ := url.Parse(prJobLink)
-				pathSegments := strings.Split(parsedPrJobUrl.Path, "/")
-				jobID := pathSegments[len(pathSegments)-1]
-				jobName := pathSegments[len(pathSegments)-2]
-				decimalHours := getJobRunTime(org, repo, prNum, jobName, jobID)
+			awsTotalHours := 0.0
+			gcpTotalHours := 0.0
+			vsphereTotalHours := 0.0
+			azureTotalHours := 0.0
 
-				if strings.Contains(prJobLink, "aws") {
-					awsTotalHours += decimalHours
-					jobInfo = JobInfo{
-						JobURL:   prJobLink,
-						Duration: decimalHours,
-						Cost:     decimalHours * awsCostRate,
-					}
-				} else if strings.Contains(prJobLink, "gcp") {
-					gcpTotalHours += decimalHours
-					jobInfo = JobInfo{
-						JobURL:   prJobLink,
-						Duration: decimalHours,
-						Cost:     decimalHours * gcpCostRate,
-					}
-				} else if strings.Contains(prJobLink, "vsphere") {
-					vsphereTotalHours += decimalHours
-					jobInfo = JobInfo{
-						JobURL:   prJobLink,
-						Duration: decimalHours,
-						Cost:     decimalHours * vsphereCostRate,
-					}
-				} else if strings.Contains(prJobLink, "azure") {
-					azureTotalHours += decimalHours
-					jobInfo = JobInfo{
-						JobURL:   prJobLink,
-						Duration: decimalHours,
-						Cost:     decimalHours * azureCostRate,
-					}
-				} else {
-					// we know we don't care about the "images", "lint", "unit" or "gofmt" jobs
-					if !strings.Contains(prJobLink, "images") && !strings.Contains(prJobLink, "lint") &&
-						!strings.Contains(prJobLink, "unit") && !strings.Contains(prJobLink, "gofmt") {
-						// fmt.Printf("Unable to calculate costs for %s\n", prJobLink)
-					}
-					fmt.Printf("Unknown job type, cannot calculate costs %s\n", prJobLink)
-					jobInfo = JobInfo{
-						JobURL:   prJobLink,
-						Duration: decimalHours,
-						Cost:     0,
+			org, repo, prNum, _ := extractPRInfo(pr.URL)
+			prowJobURL := generateProwJobURL(org, repo, prNum)
+			prJobLinks, _ := parseProwJobURL(prowJobURL)
+			fmt.Printf("%s/%s PR #%d:\n", org, repo, prNum)
+			for _, prJobLink := range prJobLinks {
+				jobInfo := JobInfo{
+					JobURL:   "",
+					Duration: 0,
+					Cost:     0,
+				}
+				if strings.Contains(prJobLink, "aws") || strings.Contains(prJobLink, "gcp") || strings.Contains(prJobLink, "vsphere") {
+					parsedPrJobUrl, _ := url.Parse(prJobLink)
+					pathSegments := strings.Split(parsedPrJobUrl.Path, "/")
+					jobID := pathSegments[len(pathSegments)-1]
+					jobName := pathSegments[len(pathSegments)-2]
+					decimalHours := getJobRunTime(org, repo, prNum, jobName, jobID)
+
+					if strings.Contains(prJobLink, "aws") {
+						awsTotalHours += decimalHours
+						jobInfo = JobInfo{
+							JobURL:   prJobLink,
+							Duration: decimalHours,
+							Cost:     decimalHours * awsCostRate,
+						}
+					} else if strings.Contains(prJobLink, "gcp") {
+						gcpTotalHours += decimalHours
+						jobInfo = JobInfo{
+							JobURL:   prJobLink,
+							Duration: decimalHours,
+							Cost:     decimalHours * gcpCostRate,
+						}
+					} else if strings.Contains(prJobLink, "vsphere") {
+						vsphereTotalHours += decimalHours
+						jobInfo = JobInfo{
+							JobURL:   prJobLink,
+							Duration: decimalHours,
+							Cost:     decimalHours * vsphereCostRate,
+						}
+					} else if strings.Contains(prJobLink, "azure") {
+						azureTotalHours += decimalHours
+						jobInfo = JobInfo{
+							JobURL:   prJobLink,
+							Duration: decimalHours,
+							Cost:     decimalHours * azureCostRate,
+						}
+					} else {
+						// we know we don't care about the "images", "lint", "unit" or "gofmt" jobs
+						if !strings.Contains(prJobLink, "images") && !strings.Contains(prJobLink, "lint") &&
+							!strings.Contains(prJobLink, "unit") && !strings.Contains(prJobLink, "gofmt") {
+							// fmt.Printf("Unable to calculate costs for %s\n", prJobLink)
+						}
+						fmt.Printf("Unknown job type, cannot calculate costs %s\n", prJobLink)
+						jobInfo = JobInfo{
+							JobURL:   prJobLink,
+							Duration: decimalHours,
+							Cost:     0,
+						}
 					}
 				}
+				PRJobInfo = append(PRJobInfo, jobInfo)
 			}
-			PRJobInfo = append(PRJobInfo, jobInfo)
-		}
 
-		prLifespan := pr.ClosedAt.Sub(pr.CreatedAt).Hours() / 24
-		prComments, _ := getPRComments(org, repo, prNum)
-		prRetestCount := 0
-		for _, comment := range prComments {
-			prRetestCount += countRetestsInComments(comment.Body, "/retest", "/retest-required")
-		}
-		awsTotalCost := awsTotalHours * awsCostRate
-		gcpTotalCost := gcpTotalHours * gcpCostRate
-		vsphereTotalCost := vsphereTotalHours * vsphereCostRate
-		azureTotalCost := azureTotalHours * azureCostRate
-		totalCloudCosts := awsTotalCost + gcpTotalCost + vsphereTotalCost + azureTotalCost
-		prInfo := PRInfo{
-			Org:               org,
-			Repo:              repo,
-			PRNum:             prNum,
-			PRLifeSpan:        prLifespan,
-			PRRetestCount:     prRetestCount,
-			Jobs:              PRJobInfo,
-			AWSTotalHours:     awsTotalHours,
-			GCPTotalHours:     gcpTotalHours,
-			VsphereTotalHours: vsphereTotalHours,
-			AzureTotalHours:   azureTotalHours,
-			TotalCost:         totalCloudCosts,
-		}
-
+			prLifespan := pr.ClosedAt.Sub(pr.CreatedAt).Hours() / 24
+			prComments, _ := getPRComments(org, repo, prNum)
+			prRetestCount := 0
+			for _, comment := range prComments {
+				prRetestCount += countRetestsInComments(comment.Body, "/retest", "/retest-required")
+			}
+			awsTotalCost := awsTotalHours * awsCostRate
+			gcpTotalCost := gcpTotalHours * gcpCostRate
+			vsphereTotalCost := vsphereTotalHours * vsphereCostRate
+			azureTotalCost := azureTotalHours * azureCostRate
+			totalCloudCosts := awsTotalCost + gcpTotalCost + vsphereTotalCost + azureTotalCost
+			prInfoChan <- PRInfo{
+				Org:               org,
+				Repo:              repo,
+				PRNum:             prNum,
+				PRLifeSpan:        prLifespan,
+				PRRetestCount:     prRetestCount,
+				Jobs:              PRJobInfo,
+				AWSTotalHours:     awsTotalHours,
+				GCPTotalHours:     gcpTotalHours,
+				VsphereTotalHours: vsphereTotalHours,
+				AzureTotalHours:   azureTotalHours,
+				TotalCost:         totalCloudCosts,
+			}
+			<-semaphore
+		}(pr)
+	}
+	for range pullRequests {
+		prInfo := <-prInfoChan
 		// Append the PRInfo to the slice
 		prInfoSlice = append(prInfoSlice, prInfo)
 	}
@@ -416,18 +428,20 @@ func countRetestsInComments(text string, targetStrings ...string) int {
 	return count
 }
 
+// in some cases the job could fail or abort and the started and/or finished json files may not be present
+// marking runtime as -1.0 in those cases
 func getJobRunTime(org, repo string, prNum int, jobName, jobID string) float64 {
 
 	startJsonUrl := fmt.Sprintf("https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/origin-ci-test/pr-logs/pull/%s_%s/%d/%s/%s/started.json", org, repo, prNum, jobName, jobID)
 	finishJsonUrl := fmt.Sprintf("https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/origin-ci-test/pr-logs/pull/%s_%s/%d/%s/%s/finished.json", org, repo, prNum, jobName, jobID)
 	startInfo, err := http.Get(startJsonUrl)
 	if err != nil {
-		log.Fatalf("Failed to get start info: %v", err)
+		return -1.0
 	}
 	defer startInfo.Body.Close()
 	finishInfo, err := http.Get(finishJsonUrl)
 	if err != nil {
-		log.Fatalf("Failed to get finish info: %v", err)
+		return -1.0
 	}
 	defer finishInfo.Body.Close()
 	startBody, _ := io.ReadAll(startInfo.Body)
@@ -437,12 +451,13 @@ func getJobRunTime(org, repo string, prNum int, jobName, jobID string) float64 {
 
 	err = json.Unmarshal([]byte(startBody), &result)
 	if err != nil {
-		log.Fatalf("could not find start timestamp in json. Err: %v\n%s %s %d %s %s", err, org, repo, prNum, jobName, jobID)
+		return -1.0
 	}
 	startTime := result["timestamp"]
+
 	err = json.Unmarshal([]byte(finishBody), &result)
 	if err != nil {
-		log.Fatalf("could not find end timestamp in json. Err: %v\n%s %s %d %s %s", err, org, repo, prNum, jobName, jobID)
+		return -1.0
 	}
 	endTime := result["timestamp"]
 
