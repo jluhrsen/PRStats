@@ -71,40 +71,25 @@
     }
 
     function createChart(jobs, chartId, tooltipId, chartHeight, maxDataPoints, title) {
-        // Calculate the width of the bars and the SVG based on the maximum number of bars
-        var margin = {top: 20, right: 20, bottom: 300, left: 40},
-            barWidth = 20,
+        var margin = {top: 100, right: 300, bottom: 40, left: 800},
+            barHeight = 20,
             barSpace = 15,
-            width = maxDataPoints * (barWidth + barSpace) * 2,
-            height = chartHeight;
+            height = maxDataPoints * (barHeight + barSpace),
+            width = chartHeight;
 
-        var x = d3.scaleBand()
-            .range([0, width])
-            .paddingInner(barSpace / (barWidth + barSpace))
-            .paddingOuter(0)
-            .domain(d3.range(maxDataPoints));
-
-        var x = d3.scaleBand()
-            .range([0, width])
+        var y = d3.scaleBand()
+            .range([0, height])
             .padding(0.1)
-            .domain(jobs);
+            .domain(jobs.map(job => job.Name));
+
+        var x = d3.scaleLinear()
+            .range([0, width])
+            .domain([0, 1]); // The domain is [0, 1] since the pass rates are percentages
 
         var barData = jobs.map(job => ({
             jobName: job.Name,
             passRate: job.PassRate
         }));
-
-        var jobNames = jobs.map(job => job.Name);
-        var passRates = jobs.map(job => job.PassRate);
-
-        var x = d3.scaleBand()
-            .range([0, width])
-            .padding(0.1)
-            .domain(jobNames);
-
-        var y = d3.scaleLinear()
-            .range([height, 0])
-            .domain([0, 1]);  // The domain is [0, 1] since the pass rates are percentages
 
         var svg = d3.select("#" + chartId)
             .attr("width", width + margin.left + margin.right)
@@ -112,71 +97,59 @@
             .append("g")
             .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
 
+
         // Define gradient
         var defs = svg.append("defs");
         var gradient = defs.append("linearGradient")
             .attr("id", "svgGradient" + chartId) // Making the gradient ID unique for each chart
             .attr("x1", "0%")
-            .attr("x2", "0%")
-            .attr("y1", "100%")
+            .attr("x2", "100%") // Gradient direction changed to horizontal
+            .attr("y1", "0%")
             .attr("y2", "0%");
 
         gradient.append("stop")
             .attr('class', 'start')
             .attr("offset", "0%")
-            .attr("stop-color", "green")
+            .attr("stop-color", "red")
             .attr("stop-opacity", 1);
 
         gradient.append("stop")
             .attr('class', 'end')
             .attr("offset", "100%")
-            .attr("stop-color", "red")
+            .attr("stop-color", "green")
             .attr("stop-opacity", 1);
 
         svg.selectAll(".bar")
             .data(barData)
             .enter().append("rect")
             .attr("class", "bar")
-            .attr("x", function(d, i) { return i * (barWidth + barSpace); })
-            .attr("width", barWidth)
-            .attr("y", function(d) { return y(d.passRate); })
-            .attr("height", function(d) { return height - y(d.passRate); })
-            .style("fill", "url(#svgGradient" + chartId + ")")
-            .on("mouseover", function(event, d) {
-                svg.append("text")
-                    .attr("id", tooltipId)
-                    .attr("x", width / 2)
-                    .attr("y", height / 2)
-                    .attr("text-anchor", "middle")
-                    .attr("font-family", "Comic Sans MS")
-                    .attr("font-size", "30px")
-                    .attr("fill", "black")
-                    .text(d.jobName);
-            })
-            .on("mouseout", function(d) {
-                svg.select("#" + tooltipId).remove();
+            .attr("y", function(d) { return y(d.jobName); })
+            .attr("height", barHeight)
+            .attr("x", 0)
+            .attr("width", function(d) { return x(d.passRate); })
+            .style("fill", "url(#svgGradient" + chartId + ")");
+
+        var xAxis = d3.axisBottom(x).tickFormat(d3.format(".0%"));
+        svg.append("g").attr("transform", "translate(0," + height + ")").call(xAxis);
+        var yAxis = d3.axisLeft(y)
+            .tickFormat(function(d, i) {
+                return barData[i].jobName + " (" + (barData[i].passRate * 100).toFixed(0) + '%)';
             });
 
-        var yAxis = d3.axisLeft(y).tickFormat(d3.format(".0%"));
-        svg.append("g").call(yAxis);
-
+        svg.append("g")
+            .call(yAxis)
+            .selectAll("text")
+            .style("font-size", "15px");
         svg.append("text")
             .attr("x", (width / 2))
-            .attr("y", 0 + (margin.top))
+            .attr("y", -(margin.top / 2))
             .attr("text-anchor", "middle")
             .style("font-size", "50px")
             .style("font-weight", "bold")
             .text(title);
 
-
-        svg.selectAll(".bar-label")
-            .data(barData)
-            .enter()
-            .append("text")
-            .text(function(d) { return d.jobName ? (d.passRate * 100).toFixed(0) + '%' : ''; }) // Only display the label if jobName is not empty
-            .attr("class", "bar-label")
-            .attr("x", function(d, i) { return i * (barWidth + barSpace) + barWidth / 2; }) // Align the labels with the bars
-            .attr("y", function(d) { return y(d.passRate) - 5; });
+        var xAxis = d3.axisBottom(x).tickFormat(d3.format(".0%"));
+        svg.append("g").attr("transform", "translate(0," + height + ")").call(xAxis);
 
     }
 </script>
