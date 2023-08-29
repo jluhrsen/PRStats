@@ -81,7 +81,7 @@ func main() {
 
 		totalJobCount := successCount + failureCount + abortedCount + pendingCount
 		if totalJobCount != (resultsDepth+1)*20 {
-			log.Fatal("Did not parse proper number of expected jobs for %s.\nExpected %d, but got %d", job.Name, (resultsDepth+1)*20, totalJobCount)
+			log.Fatalf("Did not parse proper number of expected jobs for %s.\nExpected %d, but got %d", url, (resultsDepth+1)*20, totalJobCount)
 		}
 		passRate := 0.0
 		if totalJobCount != 0 { // to avoid division by zero
