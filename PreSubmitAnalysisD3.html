@@ -80,7 +80,7 @@
         var y = d3.scaleBand()
             .range([0, height])
             .padding(0.1)
-            .domain(jobs.filter(job => job.Name !== "" && job.PassRate !== 0).map(job => job.Name));
+            .domain(jobs.filter(job => job.Name !== "").map(job => job.Name));
 
         var x = d3.scaleLinear()
             .range([0, width])
@@ -120,7 +120,7 @@
             .attr("stop-opacity", 1);
 
         svg.selectAll(".bar")
-            .data(barData.filter(d => d.jobName !== "" && d.passRate !== 0))
+            .data(barData.filter(d => d.jobName !== ""))
             .enter().append("rect")
             .attr("class", "bar")
             .attr("y", function(d) { return y(d.jobName); })
