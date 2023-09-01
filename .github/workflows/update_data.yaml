@@ -1,0 +1,12 @@
+name: Update Data
+
+on:
+  schedule:
+    - cron: '0 1 * * *'
+
+jobs:
+  update_data:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
