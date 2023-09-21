@@ -24,6 +24,8 @@ jobs:
           mv presubmit_jobs.json data/presubmit_jobs_cno.json
           
       - name: Commit and push changes
+        env:
+          GH_TOKEN: ${{ secrets.REPO_UPDATE }}
         run: |
           git config --local user.email "jluhrsen@redhat.com"
           git config --local user.name "GitHub Action"
