@@ -2,7 +2,7 @@ name: Update Data
 
 on:
   schedule:
-    - cron: '0 1 * * *'
+    - cron: '0 */6 * * *'  # Every 6 hours
   workflow_dispatch:
 
 jobs:
@@ -11,3 +11,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
+
+      - name: Run presubmit-analysis for ovn-kubernetes
+        run: go run ./presubmit-analysis.go ovn-kubernetes
+
+      - name: Run presubmit-analysis for cno
+        run: go run ./presubmit-analysis.go cluster-network-operator
