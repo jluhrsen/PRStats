@@ -21,6 +21,7 @@ type Presubmit struct {
 	FailureCount  int
 	AbortedCount  int
 	PendingCount  int
+	ErrorCount    int
 	PassRate      float64
 	TotalJobCount int
 }
@@ -74,12 +75,12 @@ func main() {
 
 	for i, job := range jobs {
 		url := fmt.Sprintf("https://prow.ci.openshift.org/job-history/gs/origin-ci-test/pr-logs/directory/%s?buildId=", job.Name)
-		successCount, failureCount, abortedCount, pendingCount, err := getJobHistory(url, resultsDepth)
+		successCount, failureCount, abortedCount, pendingCount, errorCount, err := getJobHistory(url, resultsDepth)
 		if err != nil {
 			log.Fatalf("error: %v", err)
 		}
 
-		totalJobCount := successCount + failureCount + abortedCount + pendingCount
+		totalJobCount := successCount + failureCount + abortedCount + pendingCount + errorCount
 		if totalJobCount != (resultsDepth+1)*20 {
 			log.Fatalf("Did not parse proper number of expected jobs for %s.\nExpected %d, but got %d", url, (resultsDepth+1)*20, totalJobCount)
 		}
@@ -92,11 +93,13 @@ func main() {
 		jobs[i].FailureCount = failureCount
 		jobs[i].AbortedCount = abortedCount
 		jobs[i].PendingCount = pendingCount
+		jobs[i].ErrorCount = errorCount
 		jobs[i].PassRate = passRate
 		jobs[i].TotalJobCount = totalJobCount
 
 		fmt.Printf("Job name: %s, AlwaysRun: %t, Optional: %t\n", job.Name, job.AlwaysRun, job.Optional)
-		fmt.Printf("\t\tSUCCESS count: %d, FAILURE count: %d, ABORTED count: %d, PENDING count: %d\n", successCount, failureCount, abortedCount, pendingCount)
+		fmt.Printf("\t\tSUCCESS count: %d, FAILURE count: %d, ABORTED count: %d, PENDING count: %d, ERROR count: %d\n",
+			successCount, failureCount, abortedCount, pendingCount, errorCount)
 		fmt.Printf("\t\t\tPASS RATE: %.0f%%\n", passRate*100)
 	}
 
@@ -119,21 +122,22 @@ func main() {
 
 }
 
-func getJobHistory(url string, depth int) (int, int, int, int, error) {
+func getJobHistory(url string, depth int) (int, int, int, int, int, error) {
 	successCount := 0
 	failureCount := 0
 	abortedCount := 0
 	pendingCount := 0
+	errorCount := 0
 
-	err := processPage(url, &successCount, &failureCount, &abortedCount, &pendingCount, depth)
+	err := processPage(url, &successCount, &failureCount, &abortedCount, &pendingCount, &errorCount, depth)
 	if err != nil {
-		return 0, 0, 0, 0, err
+		return 0, 0, 0, 0, 0, err
 	}
 
-	return successCount, failureCount, abortedCount, pendingCount, nil
+	return successCount, failureCount, abortedCount, pendingCount, errorCount, nil
 }
 
-func processPage(url string, successCount *int, failureCount *int, abortedCount *int, pendingCount *int, depth int) error {
+func processPage(url string, successCount *int, failureCount *int, abortedCount *int, pendingCount *int, errorCount *int, depth int) error {
 	if depth >= 0 {
 		resp, err := http.Get(url)
 		if err != nil {
@@ -174,6 +178,8 @@ func processPage(url string, successCount *int, failureCount *int, abortedCount 
 				*abortedCount++
 			} else if build.Result == "PENDING" {
 				*pendingCount++
+			} else if build.Result == "ERROR" {
+				*errorCount++
 			}
 		}
 
@@ -184,7 +190,7 @@ func processPage(url string, successCount *int, failureCount *int, abortedCount 
 				if exists {
 					// Prepend the base URL, because the URL is relative
 					olderRunsURL = "https://prow.ci.openshift.org" + olderRunsURL
-					err = processPage(olderRunsURL, successCount, failureCount, abortedCount, pendingCount, depth-1)
+					err = processPage(olderRunsURL, successCount, failureCount, abortedCount, pendingCount, errorCount, depth-1)
 				}
 			}
 		})
