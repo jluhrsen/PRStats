@@ -31,4 +31,5 @@ jobs:
           git config --local user.name "GitHub Action"
           git add data/
           git commit -m "Update data files"
+          git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/jluhrsen/PRStats.git
           git push
