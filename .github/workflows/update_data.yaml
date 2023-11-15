@@ -33,7 +33,14 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "Update data files"
+            LAST_COMMIT_MSG=$(git log -1 --pretty=%B)
+            if [[ "$LAST_COMMIT_MSG" == "Update data files" ]]; then
+              echo "Amending to the last commit"
+              git commit --amend --no-edit
+            else
+              echo "Creating a new commit"
+              git commit -m "Update data files"
+            fi
           fi
           git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/jluhrsen/PRStats.git
           git push
