@@ -30,6 +30,10 @@ jobs:
           git config --local user.email "jluhrsen@redhat.com"
           git config --local user.name "GitHub Action"
           git add data/
-          git commit -m "Update data files"
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update data files"
+          fi
           git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/jluhrsen/PRStats.git
           git push
