@@ -44,4 +44,6 @@ jobs:
             fi
           fi
           git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/jluhrsen/PRStats.git
-          git push
+          git fetch
+          git rebase
+          git push --force-with-lease
