@@ -29,6 +29,7 @@ jobs:
         run: |
           git config --local user.email "jluhrsen@redhat.com"
           git config --local user.name "GitHub Action"
+          git log
           git add data/
           if git diff --staged --quiet; then
             echo "No changes to commit"
