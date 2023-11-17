@@ -22,14 +22,19 @@ jobs:
         run: |
           go run ./presubmit-analysis.go cluster-network-operator
           mv presubmit_jobs.json data/presubmit_jobs_cno.json
-          
+
+      - name: Debugging Step
+        run: |
+          git status
+          git log
+
       - name: Commit and push changes
         env:
           GH_TOKEN: ${{ secrets.REPO_UPDATE }}
         run: |
           git config --local user.email "jluhrsen@redhat.com"
           git config --local user.name "GitHub Action"
-          git log
+          git status
           git add data/
           if git diff --staged --quiet; then
             echo "No changes to commit"
