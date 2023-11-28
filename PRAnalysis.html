@@ -287,7 +287,8 @@
             <td>${obj.PRRetestCount}</td>
           `;
 
-                    table.appendChild(row);
+                    var tableBody = table.querySelector('tbody');
+                    tableBody.appendChild(row);
                 });
 
                 // Extract PRRetestCount values from JSON data
