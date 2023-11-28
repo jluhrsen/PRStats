@@ -1,4 +1,4 @@
-name: Update Data
+name: Update Presubmit Job Data
 
 on:
   schedule:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  update_data:
+  update_presubmit_data:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
