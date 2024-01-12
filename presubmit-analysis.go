@@ -22,6 +22,7 @@ type Presubmit struct {
 	AbortedCount  int
 	PendingCount  int
 	ErrorCount    int
+	UnknownCount  int
 	PassRate      float64
 	TotalJobCount int
 }
@@ -75,12 +76,12 @@ func main() {
 
 	for i, job := range jobs {
 		url := fmt.Sprintf("https://prow.ci.openshift.org/job-history/gs/origin-ci-test/pr-logs/directory/%s?buildId=", job.Name)
-		successCount, failureCount, abortedCount, pendingCount, errorCount, unexpectedStatusCount, err := getJobHistory(url, resultsDepth)
+		successCount, failureCount, abortedCount, pendingCount, errorCount, unexpectedStatusCount, unknownCount, err := getJobHistory(url, resultsDepth)
 		if err != nil {
 			log.Fatalf("error: %v", err)
 		}
 
-		totalJobCount := successCount + failureCount + abortedCount + pendingCount + errorCount
+		totalJobCount := successCount + failureCount + abortedCount + pendingCount + errorCount + unknownCount
 		if unexpectedStatusCount > 0 {
 			log.Fatalf("Did not parse proper number of expected jobs for %s.\nExpected %d, but got %d unexpected statuses", url, (resultsDepth+1)*20, unexpectedStatusCount)
 		}
@@ -95,12 +96,13 @@ func main() {
 		jobs[i].AbortedCount = abortedCount
 		jobs[i].PendingCount = pendingCount
 		jobs[i].ErrorCount = errorCount
+		jobs[i].UnknownCount = unknownCount
 		jobs[i].PassRate = passRate
 		jobs[i].TotalJobCount = totalJobCount
 
 		fmt.Printf("Job name: %s, AlwaysRun: %t, Optional: %t\n", job.Name, job.AlwaysRun, job.Optional)
-		fmt.Printf("\t\tSUCCESS count: %d, FAILURE count: %d, ABORTED count: %d, PENDING count: %d, ERROR count: %d\n",
-			successCount, failureCount, abortedCount, pendingCount, errorCount)
+		fmt.Printf("\t\tSUCCESS count: %d, FAILURE count: %d, ABORTED count: %d, PENDING count: %d, ERROR count: %d, UNKNOWN count: %d\n",
+			successCount, failureCount, abortedCount, pendingCount, errorCount, unknownCount)
 		fmt.Printf("\t\t\tPASS RATE: %.0f%%\n", passRate*100)
 	}
 
@@ -123,23 +125,24 @@ func main() {
 
 }
 
-func getJobHistory(url string, depth int) (int, int, int, int, int, int, error) {
+func getJobHistory(url string, depth int) (int, int, int, int, int, int, int, error) {
 	successCount := 0
 	failureCount := 0
 	abortedCount := 0
 	pendingCount := 0
 	errorCount := 0
+	unknownCount := 0
 	unexpectedStatusCount := 0
 
-	err := processPage(url, &successCount, &failureCount, &abortedCount, &pendingCount, &errorCount, &unexpectedStatusCount, depth)
+	err := processPage(url, &successCount, &failureCount, &abortedCount, &pendingCount, &errorCount, &unexpectedStatusCount, &unknownCount, depth)
 	if err != nil {
-		return 0, 0, 0, 0, 0, 0, err
+		return 0, 0, 0, 0, 0, 0, 0, err
 	}
 
-	return successCount, failureCount, abortedCount, pendingCount, errorCount, unexpectedStatusCount, nil
+	return successCount, failureCount, abortedCount, pendingCount, errorCount, unexpectedStatusCount, unknownCount, nil
 }
 
-func processPage(url string, successCount *int, failureCount *int, abortedCount *int, pendingCount *int, errorCount *int, unexpectedStatusCount *int, depth int) error {
+func processPage(url string, successCount *int, failureCount *int, abortedCount *int, pendingCount *int, errorCount *int, unexpectedStatusCount *int, unknownCount *int, depth int) error {
 	if depth >= 0 {
 		resp, err := http.Get(url)
 		if err != nil {
@@ -182,6 +185,8 @@ func processPage(url string, successCount *int, failureCount *int, abortedCount 
 				*pendingCount++
 			} else if build.Result == "ERROR" {
 				*errorCount++
+			} else if build.Result == "UNKNOWN" {
+				*unknownCount++
 			} else {
 				*unexpectedStatusCount++
 			}
@@ -194,7 +199,7 @@ func processPage(url string, successCount *int, failureCount *int, abortedCount 
 				if exists {
 					// Prepend the base URL, because the URL is relative
 					olderRunsURL = "https://prow.ci.openshift.org" + olderRunsURL
-					err = processPage(olderRunsURL, successCount, failureCount, abortedCount, pendingCount, errorCount, unexpectedStatusCount, depth-1)
+					err = processPage(olderRunsURL, successCount, failureCount, abortedCount, pendingCount, errorCount, unexpectedStatusCount, unknownCount, depth-1)
 				}
 			}
 		})
