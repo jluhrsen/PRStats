@@ -9,22 +9,27 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 
 	yaml "gopkg.in/yaml.v2"
 )
 
 type Presubmit struct {
-	Name          string `yaml:"name"`
-	AlwaysRun     bool   `yaml:"always_run"`
-	Optional      bool   `yaml:"optional"`
-	SuccessCount  int
-	FailureCount  int
-	AbortedCount  int
-	PendingCount  int
-	ErrorCount    int
-	UnknownCount  int
-	PassRate      float64
-	TotalJobCount int
+	Name              string            `yaml:"name"`
+	AlwaysRun         bool              `yaml:"always_run"`
+	Optional          bool              `yaml:"optional"`
+	RunIfChanged      string            `yaml:"run_if_changed" json:"-"`
+	SkipIfOnlyChanged string            `yaml:"skip_if_only_changed" json:"-"`
+	Annotations       map[string]string `yaml:"annotations" json:"-"`
+	AutoTriggered     bool
+	SuccessCount      int
+	FailureCount      int
+	AbortedCount      int
+	PendingCount      int
+	ErrorCount        int
+	UnknownCount      int
+	PassRate          float64
+	TotalJobCount     int
 }
 
 type Presubmits struct {
@@ -73,43 +78,48 @@ func main() {
 	// how many pages of results to look at (20 per page)
 	resultsDepth := 2
 
-	var results []Presubmit
-	for _, job := range jobs {
-		url := fmt.Sprintf("https://prow.ci.openshift.org/job-history/gs/origin-ci-test/pr-logs/directory/%s?buildId=", job.Name)
-		successCount, failureCount, abortedCount, pendingCount, errorCount, unexpectedStatusCount, unknownCount, err := getJobHistory(url, resultsDepth)
-		if err != nil {
-			log.Fatalf("error: %v", err)
-		}
+	// Each job costs one prow request per page of history, which walking the
+	// list one job at a time turned into a twenty minute run.
+	const workers = 8
 
-		totalJobCount := successCount + failureCount + abortedCount + pendingCount + errorCount + unknownCount
-		if unexpectedStatusCount > 0 {
-			log.Printf("warning: %d unrecognized build statuses for %s", unexpectedStatusCount, job.Name)
+	analyzed := make([]jobResult, len(jobs))
+	queue := make(chan int)
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range queue {
+				analyzed[i] = analyzeJob(jobs[i], resultsDepth)
+			}
+		}()
+	}
+	for i := range jobs {
+		queue <- i
+	}
+	close(queue)
+	wg.Wait()
+
+	// Report in the order the jobs were configured rather than the order the
+	// workers happened to finish in.
+	var results []Presubmit
+	for _, analysis := range analyzed {
+		if analysis.err != nil {
+			log.Fatalf("error: %v", analysis.err)
 		}
-		if totalJobCount == 0 {
-			// job is configured but has no recent runs, so it has nothing to chart
-			log.Printf("skipping %s: no build history", job.Name)
+		for _, note := range analysis.notes {
+			log.Print(note)
+		}
+		if !analysis.charted {
 			continue
 		}
-
-		passRate := 0.0
-		if successCount+failureCount > 0 { // to avoid division by zero
-			passRate = float64(successCount) / float64(successCount+failureCount)
-		}
-
-		job.SuccessCount = successCount
-		job.FailureCount = failureCount
-		job.AbortedCount = abortedCount
-		job.PendingCount = pendingCount
-		job.ErrorCount = errorCount
-		job.UnknownCount = unknownCount
-		job.PassRate = passRate
-		job.TotalJobCount = totalJobCount
+		job := analysis.job
 		results = append(results, job)
 
-		fmt.Printf("Job name: %s, AlwaysRun: %t, Optional: %t\n", job.Name, job.AlwaysRun, job.Optional)
+		fmt.Printf("Job name: %s, AutoTriggered: %t, Optional: %t\n", job.Name, job.AutoTriggered, job.Optional)
 		fmt.Printf("\t\tSUCCESS count: %d, FAILURE count: %d, ABORTED count: %d, PENDING count: %d, ERROR count: %d, UNKNOWN count: %d\n",
-			successCount, failureCount, abortedCount, pendingCount, errorCount, unknownCount)
-		fmt.Printf("\t\t\tPASS RATE: %.0f%%\n", passRate*100)
+			job.SuccessCount, job.FailureCount, job.AbortedCount, job.PendingCount, job.ErrorCount, job.UnknownCount)
+		fmt.Printf("\t\t\tPASS RATE: %.0f%%\n", job.PassRate*100)
 	}
 
 	if len(results) == 0 {
@@ -133,6 +143,75 @@ func main() {
 		log.Fatalf("Failed to write JSON data to file: %v", err)
 	}
 
+}
+
+// jobResult carries one job's history back from a worker. Notes are collected
+// rather than logged in place so the output stays in configuration order.
+type jobResult struct {
+	job     Presubmit
+	charted bool
+	notes   []string
+	err     error
+}
+
+func analyzeJob(job Presubmit, resultsDepth int) jobResult {
+	url := fmt.Sprintf("https://prow.ci.openshift.org/job-history/gs/origin-ci-test/pr-logs/directory/%s?buildId=", job.Name)
+	successCount, failureCount, abortedCount, pendingCount, errorCount, unexpectedStatusCount, unknownCount, err := getJobHistory(url, resultsDepth)
+	if err != nil {
+		return jobResult{err: err}
+	}
+
+	result := jobResult{}
+	totalJobCount := successCount + failureCount + abortedCount + pendingCount + errorCount + unknownCount
+	if unexpectedStatusCount > 0 {
+		result.notes = append(result.notes, fmt.Sprintf("warning: %d unrecognized build statuses for %s", unexpectedStatusCount, job.Name))
+	}
+	if totalJobCount == 0 {
+		// job is configured but has no recent runs, so it has nothing to chart
+		result.notes = append(result.notes, fmt.Sprintf("skipping %s: no build history", job.Name))
+		return result
+	}
+
+	passRate := 0.0
+	if successCount+failureCount > 0 { // to avoid division by zero
+		passRate = float64(successCount) / float64(successCount+failureCount)
+	}
+
+	job.SuccessCount = successCount
+	job.FailureCount = failureCount
+	job.AbortedCount = abortedCount
+	job.PendingCount = pendingCount
+	job.ErrorCount = errorCount
+	job.UnknownCount = unknownCount
+	job.PassRate = passRate
+	job.TotalJobCount = totalJobCount
+	job.AutoTriggered = autoTriggered(job)
+
+	result.job = job
+	result.charted = true
+	return result
+}
+
+// autoTriggered reports whether a job runs without anyone asking for it.
+// `optional` says whether a job blocks the PR, which is a separate question
+// from what starts it, and almost nothing sets always_run any more: prow can
+// start a job from run_if_changed or skip_if_only_changed, and OpenShift's
+// pipeline controller starts one from the matching pipeline_ annotations. A
+// run_if_changed of `^$` matches no filename at all, so those jobs are in the
+// pipeline but only ever run on request.
+func autoTriggered(job Presubmit) bool {
+	if job.AlwaysRun {
+		return true
+	}
+	if job.SkipIfOnlyChanged != "" || job.Annotations["pipeline_skip_if_only_changed"] != "" {
+		return true
+	}
+	for _, runIfChanged := range []string{job.RunIfChanged, job.Annotations["pipeline_run_if_changed"]} {
+		if runIfChanged != "" && runIfChanged != "^$" {
+			return true
+		}
+	}
+	return false
 }
 
 // getPresubmitConfig fetches the prow presubmit config for a project. The

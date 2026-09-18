@@ -59,28 +59,30 @@
 
             // Both projects share a row per bucket, so the same category can be
             // compared across projects without scrolling.
-            var gatingRow = d3.select("body").append("div").attr("class", "chart-row");
-            var autoRunRow = d3.select("body").append("div").attr("class", "chart-row");
+            var gatingAutoRow = d3.select("body").append("div").attr("class", "chart-row");
+            var gatingManualRow = d3.select("body").append("div").attr("class", "chart-row");
+            var autoRow = d3.select("body").append("div").attr("class", "chart-row");
             var manualRow = d3.select("body").append("div").attr("class", "chart-row");
 
             allData.forEach((data, index) => {
-                // optional decides whether a job blocks the PR; always_run decides
-                // whether it runs by itself. The two together give three categories
-                // that mean quite different things, and a non-gating job that runs
-                // on every PR is far stronger evidence than one somebody triggered
-                // by hand a handful of times.
-                var gatingJobs = data.filter(job => !job.Optional);
-                var autoRunJobs = data.filter(job => job.Optional && job.AlwaysRun);
-                var manualJobs = data.filter(job => job.Optional && !job.AlwaysRun);
+                // Whether a job blocks the PR and what starts it are independent
+                // questions. A pass rate means something different depending on
+                // both: a gating job that runs by itself is measured over real
+                // PRs, while a job somebody triggers by hand is measured over
+                // whichever runs they chose to ask for.
+                var buckets = [
+                    {row: gatingAutoRow, title: " - Gating, Auto Triggered", test: job => !job.Optional && job.AutoTriggered},
+                    {row: gatingManualRow, title: " - Gating, Manual Trigger", test: job => !job.Optional && !job.AutoTriggered},
+                    {row: autoRow, title: " - Non-Gating, Auto Triggered", test: job => job.Optional && job.AutoTriggered},
+                    {row: manualRow, title: " - Non-Gating, Manual Trigger", test: job => job.Optional && !job.AutoTriggered}
+                ];
                 var projectName = jsonFiles[index].match(/presubmit_jobs_(\w+)\.json/)[1].toUpperCase();
 
-                gatingJobs.sort((a, b) => b.PassRate - a.PassRate);
-                autoRunJobs.sort((a, b) => b.PassRate - a.PassRate);
-                manualJobs.sort((a, b) => b.PassRate - a.PassRate);
-
-                createChart(gatingJobs, gatingRow, projectName + " - Gating");
-                createChart(autoRunJobs, autoRunRow, projectName + " - Auto-Run, Non-Gating");
-                createChart(manualJobs, manualRow, projectName + " - Manual Trigger, Non-Gating");
+                buckets.forEach(bucket => {
+                    var jobs = data.filter(bucket.test);
+                    jobs.sort((a, b) => b.PassRate - a.PassRate);
+                    createChart(jobs, bucket.row, projectName + bucket.title);
+                });
             });
         }).catch(error => {
             showMessage("Failed to load presubmit job data: " + error);
@@ -98,7 +100,7 @@
     }
 
     function createChart(jobs, container, title) {
-        var margin = {top: 60, right: 40, bottom: 40, left: 440},
+        var margin = {top: 60, right: 40, bottom: 40, left: 470},
             barHeight = 20,
             barSpace = 15,
             // size each chart to its own job count so the bars stay the same
@@ -108,7 +110,8 @@
 
         var barData = jobs.map(job => ({
             jobName: shortName(job.Name),
-            passRate: job.PassRate
+            passRate: job.PassRate,
+            runCount: job.TotalJobCount
         }));
 
         var y = d3.scaleBand()
@@ -185,7 +188,9 @@
 
         var yAxis = d3.axisLeft(y)
             .tickFormat(function(d, i) {
-                return barData[i].jobName + " (" + (barData[i].passRate * 100).toFixed(0) + '%)';
+                // the run count matters as much as the rate: some of these jobs
+                // have only been triggered a handful of times
+                return barData[i].jobName + " (" + (barData[i].passRate * 100).toFixed(0) + "%, n=" + barData[i].runCount + ")";
             });
 
         svg.append("g")
