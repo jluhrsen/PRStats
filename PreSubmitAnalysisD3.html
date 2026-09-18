@@ -34,7 +34,10 @@
     window.onload = function() {
         var jsonFiles = ["./data/presubmit_jobs_ovn.json", "./data/presubmit_jobs_cno.json"];
 
-        var dataPromises = jsonFiles.map(file => d3.json(file));
+        // The data files are rewritten every 6 hours but GitHub Pages serves
+        // them with max-age=600, so a cached copy easily outlives its contents.
+        var cacheBuster = "?t=" + Date.now();
+        var dataPromises = jsonFiles.map(file => d3.json(file + cacheBuster));
         Promise.all(dataPromises).then(rawData => {
             // A data file is null or empty when the update workflow could not
             // collect anything, which used to render a silently blank page.
