@@ -42,17 +42,11 @@ func main() {
 
 	project := os.Args[1]
 
-	url := fmt.Sprintf("https://raw.githubusercontent.com/openshift/release/master/ci-operator/jobs/openshift/%s/openshift-%s-master-presubmits.yaml", project, project)
-	resp, err := http.Get(url)
+	data, branch, err := getPresubmitConfig(project)
 	if err != nil {
 		log.Fatalf("error: %v", err)
 	}
-	defer resp.Body.Close()
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Fatalf("error: %v", err)
-	}
+	log.Printf("using %q branch config for %s", branch, project)
 
 	var presubmits Presubmits
 
@@ -64,17 +58,23 @@ func main() {
 	var jobs []Presubmit
 	for _, jobList := range presubmits.PresubmitJobs {
 		for _, job := range jobList {
-			// only care about e2e jobs that run on every PR
-			if strings.Contains(job.Name, "e2e") && job.AlwaysRun != false {
+			// only care about e2e jobs. required vs optional is decided by the
+			// optional field, not always_run: nearly every e2e presubmit is
+			// always_run: false now and is triggered on demand instead.
+			if strings.Contains(job.Name, "e2e") {
 				jobs = append(jobs, job)
 			}
 		}
+	}
+	if len(jobs) == 0 {
+		log.Fatalf("no e2e presubmit jobs found for %s on branch %s", project, branch)
 	}
 
 	// how many pages of results to look at (20 per page)
 	resultsDepth := 2
 
-	for i, job := range jobs {
+	var results []Presubmit
+	for _, job := range jobs {
 		url := fmt.Sprintf("https://prow.ci.openshift.org/job-history/gs/origin-ci-test/pr-logs/directory/%s?buildId=", job.Name)
 		successCount, failureCount, abortedCount, pendingCount, errorCount, unexpectedStatusCount, unknownCount, err := getJobHistory(url, resultsDepth)
 		if err != nil {
@@ -83,22 +83,28 @@ func main() {
 
 		totalJobCount := successCount + failureCount + abortedCount + pendingCount + errorCount + unknownCount
 		if unexpectedStatusCount > 0 {
-			log.Fatalf("Did not parse proper number of expected jobs for %s.\nExpected %d, but got %d unexpected statuses", url, (resultsDepth+1)*20, unexpectedStatusCount)
+			log.Printf("warning: %d unrecognized build statuses for %s", unexpectedStatusCount, job.Name)
+		}
+		if totalJobCount == 0 {
+			// job is configured but has no recent runs, so it has nothing to chart
+			log.Printf("skipping %s: no build history", job.Name)
+			continue
 		}
 
 		passRate := 0.0
-		if totalJobCount != 0 { // to avoid division by zero
-			passRate = float64(successCount) / (float64(successCount) + float64(failureCount))
+		if successCount+failureCount > 0 { // to avoid division by zero
+			passRate = float64(successCount) / float64(successCount+failureCount)
 		}
 
-		jobs[i].SuccessCount = successCount
-		jobs[i].FailureCount = failureCount
-		jobs[i].AbortedCount = abortedCount
-		jobs[i].PendingCount = pendingCount
-		jobs[i].ErrorCount = errorCount
-		jobs[i].UnknownCount = unknownCount
-		jobs[i].PassRate = passRate
-		jobs[i].TotalJobCount = totalJobCount
+		job.SuccessCount = successCount
+		job.FailureCount = failureCount
+		job.AbortedCount = abortedCount
+		job.PendingCount = pendingCount
+		job.ErrorCount = errorCount
+		job.UnknownCount = unknownCount
+		job.PassRate = passRate
+		job.TotalJobCount = totalJobCount
+		results = append(results, job)
 
 		fmt.Printf("Job name: %s, AlwaysRun: %t, Optional: %t\n", job.Name, job.AlwaysRun, job.Optional)
 		fmt.Printf("\t\tSUCCESS count: %d, FAILURE count: %d, ABORTED count: %d, PENDING count: %d, ERROR count: %d, UNKNOWN count: %d\n",
@@ -106,7 +112,11 @@ func main() {
 		fmt.Printf("\t\t\tPASS RATE: %.0f%%\n", passRate*100)
 	}
 
-	jsonData, err := json.Marshal(jobs)
+	if len(results) == 0 {
+		log.Fatalf("no e2e presubmit jobs with build history found for %s", project)
+	}
+
+	jsonData, err := json.Marshal(results)
 	if err != nil {
 		log.Fatalf("Failed to marshal jobs to JSON: %v", err)
 	}
@@ -123,6 +133,34 @@ func main() {
 		log.Fatalf("Failed to write JSON data to file: %v", err)
 	}
 
+}
+
+// getPresubmitConfig fetches the prow presubmit config for a project. The
+// filename embeds the repo's default branch, which is not the same everywhere
+// (ovn-kubernetes moved from master to main, cluster-network-operator did not),
+// so try main first and fall back to master.
+func getPresubmitConfig(project string) ([]byte, string, error) {
+	for _, branch := range []string{"main", "master"} {
+		url := fmt.Sprintf("https://raw.githubusercontent.com/openshift/release/master/ci-operator/jobs/openshift/%s/openshift-%s-%s-presubmits.yaml", project, project, branch)
+		resp, err := http.Get(url)
+		if err != nil {
+			return nil, "", err
+		}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, "", err
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			return body, branch, nil
+		case http.StatusNotFound:
+			continue
+		default:
+			return nil, "", fmt.Errorf("GET %s returned %s", url, resp.Status)
+		}
+	}
+	return nil, "", fmt.Errorf("no presubmit config for %s on branch main or master", project)
 }
 
 func getJobHistory(url string, depth int) (int, int, int, int, int, int, int, error) {
@@ -166,6 +204,12 @@ func processPage(url string, successCount *int, failureCount *int, abortedCount 
 		js = strings.TrimSpace(js)
 		js = strings.TrimPrefix(js, "var allBuilds = ")
 		js = strings.TrimSuffix(js, ";")
+
+		if js == "" {
+			// job has never run, or prow has no history page for it
+			log.Printf("warning: no build history at %s", url)
+			return nil
+		}
 
 		// Unmarshal the JSON
 		var builds []Build

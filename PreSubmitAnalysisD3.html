@@ -16,6 +16,11 @@
             border-radius: 5px;
             pointer-events: none;  // to prevent the tooltip itself from triggering mouse events
         }
+        .message {
+            font-size: 20px;
+            font-family: sans-serif;
+            margin: 40px;
+        }
         .file-label {
             font-size: 20px;
             font-weight: bold;
@@ -30,19 +35,30 @@
         var jsonFiles = ["./data/presubmit_jobs_ovn.json", "./data/presubmit_jobs_cno.json"];
 
         var dataPromises = jsonFiles.map(file => d3.json(file));
-        Promise.all(dataPromises).then(allData => {
+        Promise.all(dataPromises).then(rawData => {
+            // A data file is null or empty when the update workflow could not
+            // collect anything, which used to render a silently blank page.
+            var allData = rawData.map(data => Array.isArray(data) ? data : []);
+            if (allData.every(data => data.length === 0)) {
+                showMessage("No presubmit job data available. Check the \"Update Presubmit Job Data\" workflow.");
+                return;
+            }
+
             // Find the maximum number of data points across all datasets
-            var maxDataPoints = Math.max(...allData.map(data => Math.max(data.filter(job => job.AlwaysRun && !job.Optional).length, data.filter(job => job.Optional).length)));
+            var maxDataPoints = Math.max(...allData.map(data => Math.max(data.filter(job => !job.Optional).length, data.filter(job => job.Optional).length)));
 
             // Iterate over the data to create the charts
             allData.forEach((data, index) => {
-                var requiredJobs = data.filter(job => job.AlwaysRun && !job.Optional);
+                // required vs optional is the optional field alone. always_run
+                // no longer tracks it: most e2e presubmits are always_run: false
+                // and are triggered on demand, but still block the PR.
+                var requiredJobs = data.filter(job => !job.Optional);
                 var optionalJobs = data.filter(job => job.Optional);
                 var projectName = jsonFiles[index].match(/presubmit_jobs_(\w+)\.json/)[1].toUpperCase();
 
                 // Pad the datasets with empty data points
                 while (requiredJobs.length < maxDataPoints) {
-                    requiredJobs.push({Name: "", PassRate: 0, AlwaysRun: true, Optional: false});
+                    requiredJobs.push({Name: "", PassRate: 0, AlwaysRun: false, Optional: false});
                 }
                 while (optionalJobs.length < maxDataPoints) {
                     optionalJobs.push({Name: "", PassRate: 0, AlwaysRun: false, Optional: true});
@@ -67,7 +83,13 @@
                 createChart(requiredJobs, chartId1, tooltipId1, 500, maxDataPoints, projectName + " - Required");
                 createChart(optionalJobs, chartId2, tooltipId2, 500, maxDataPoints, projectName + " - Optional");
             });
+        }).catch(error => {
+            showMessage("Failed to load presubmit job data: " + error);
         });
+    }
+
+    function showMessage(text) {
+        d3.select("body").append("div").attr("class", "message").text(text);
     }
 
     function createChart(jobs, chartId, tooltipId, chartHeight, maxDataPoints, title) {
