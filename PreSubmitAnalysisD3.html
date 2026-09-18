@@ -57,23 +57,30 @@
                 return;
             }
 
-            // Both projects share a row per bucket: required on top, optional below.
-            var requiredRow = d3.select("body").append("div").attr("class", "chart-row");
-            var optionalRow = d3.select("body").append("div").attr("class", "chart-row");
+            // Both projects share a row per bucket, so the same category can be
+            // compared across projects without scrolling.
+            var gatingRow = d3.select("body").append("div").attr("class", "chart-row");
+            var autoRunRow = d3.select("body").append("div").attr("class", "chart-row");
+            var manualRow = d3.select("body").append("div").attr("class", "chart-row");
 
             allData.forEach((data, index) => {
-                // required vs optional is the optional field alone. always_run
-                // no longer tracks it: most e2e presubmits are always_run: false
-                // and are triggered on demand, but still block the PR.
-                var requiredJobs = data.filter(job => !job.Optional);
-                var optionalJobs = data.filter(job => job.Optional);
+                // optional decides whether a job blocks the PR; always_run decides
+                // whether it runs by itself. The two together give three categories
+                // that mean quite different things, and a non-gating job that runs
+                // on every PR is far stronger evidence than one somebody triggered
+                // by hand a handful of times.
+                var gatingJobs = data.filter(job => !job.Optional);
+                var autoRunJobs = data.filter(job => job.Optional && job.AlwaysRun);
+                var manualJobs = data.filter(job => job.Optional && !job.AlwaysRun);
                 var projectName = jsonFiles[index].match(/presubmit_jobs_(\w+)\.json/)[1].toUpperCase();
 
-                requiredJobs.sort((a, b) => b.PassRate - a.PassRate);
-                optionalJobs.sort((a, b) => b.PassRate - a.PassRate);
+                gatingJobs.sort((a, b) => b.PassRate - a.PassRate);
+                autoRunJobs.sort((a, b) => b.PassRate - a.PassRate);
+                manualJobs.sort((a, b) => b.PassRate - a.PassRate);
 
-                createChart(requiredJobs, requiredRow, projectName + " - Required");
-                createChart(optionalJobs, optionalRow, projectName + " - Optional");
+                createChart(gatingJobs, gatingRow, projectName + " - Gating");
+                createChart(autoRunJobs, autoRunRow, projectName + " - Auto-Run, Non-Gating");
+                createChart(manualJobs, manualRow, projectName + " - Manual Trigger, Non-Gating");
             });
         }).catch(error => {
             showMessage("Failed to load presubmit job data: " + error);
@@ -121,6 +128,27 @@
             .append("g")
             .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
 
+        svg.append("text")
+            .attr("x", (width / 2))
+            .attr("y", -(margin.top / 2))
+            .attr("text-anchor", "middle")
+            .style("font-size", "22px")
+            .style("font-weight", "bold")
+            .text(title);
+
+        // A category can legitimately be empty, so say so rather than drawing
+        // an axis with nothing on it.
+        if (jobs.length === 0) {
+            svg.append("text")
+                .attr("x", (width / 2))
+                .attr("y", barHeight)
+                .attr("text-anchor", "middle")
+                .style("font-size", "14px")
+                .style("fill", "#666")
+                .text("no jobs in this category");
+            return;
+        }
+
         // Define gradient
         var defs = svg.append("defs");
         var gradient = defs.append("linearGradient")
@@ -164,14 +192,6 @@
             .call(yAxis)
             .selectAll("text")
             .style("font-size", "13px");
-
-        svg.append("text")
-            .attr("x", (width / 2))
-            .attr("y", -(margin.top / 2))
-            .attr("text-anchor", "middle")
-            .style("font-size", "28px")
-            .style("font-weight", "bold")
-            .text(title);
     }
 </script>
 </body>
