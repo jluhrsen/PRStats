@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"github.com/PuerkitoBio/goquery"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	yaml "gopkg.in/yaml.v2"
 )
@@ -21,7 +23,7 @@ type Presubmit struct {
 	RunIfChanged      string            `yaml:"run_if_changed" json:"-"`
 	SkipIfOnlyChanged string            `yaml:"skip_if_only_changed" json:"-"`
 	Annotations       map[string]string `yaml:"annotations" json:"-"`
-	AutoTriggered     bool
+	Stage             string
 	SuccessCount      int
 	FailureCount      int
 	AbortedCount      int
@@ -116,7 +118,7 @@ func main() {
 		job := analysis.job
 		results = append(results, job)
 
-		fmt.Printf("Job name: %s, AutoTriggered: %t, Optional: %t\n", job.Name, job.AutoTriggered, job.Optional)
+		fmt.Printf("Job name: %s, Stage: %s, Optional: %t\n", job.Name, job.Stage, job.Optional)
 		fmt.Printf("\t\tSUCCESS count: %d, FAILURE count: %d, ABORTED count: %d, PENDING count: %d, ERROR count: %d, UNKNOWN count: %d\n",
 			job.SuccessCount, job.FailureCount, job.AbortedCount, job.PendingCount, job.ErrorCount, job.UnknownCount)
 		fmt.Printf("\t\t\tPASS RATE: %.0f%%\n", job.PassRate*100)
@@ -185,33 +187,34 @@ func analyzeJob(job Presubmit, resultsDepth int) jobResult {
 	job.UnknownCount = unknownCount
 	job.PassRate = passRate
 	job.TotalJobCount = totalJobCount
-	job.AutoTriggered = autoTriggered(job)
+	job.Stage = stageFor(job)
 
 	result.job = job
 	result.charted = true
 	return result
 }
 
-// autoTriggered reports whether a job runs without anyone asking for it.
-// `optional` says whether a job blocks the PR, which is a separate question
-// from what starts it, and almost nothing sets always_run any more: prow can
-// start a job from run_if_changed or skip_if_only_changed, and OpenShift's
-// pipeline controller starts one from the matching pipeline_ annotations. A
-// run_if_changed of `^$` matches no filename at all, so those jobs are in the
-// pipeline but only ever run on request.
-func autoTriggered(job Presubmit) bool {
-	if job.AlwaysRun {
-		return true
+// stageFor reports when a job runs. OpenShift CI runs presubmits as a two
+// stage pipeline: prow starts the first stage itself on every push, and the
+// pipeline controller schedules the second stage once the first one passes.
+// always_run is no longer a useful signal on its own, since almost every job
+// now sets it to false and relies on one of the conditions below.
+//
+// The pipeline_ annotations deliberately do not appear here. They decide which
+// second stage jobs are worth running against a particular pull request, not
+// whether a job belongs to the second stage at all.
+func stageFor(job Presubmit) string {
+	// prow runs these directly, subject to its own file conditions
+	if job.AlwaysRun || job.RunIfChanged != "" || job.SkipIfOnlyChanged != "" {
+		return "1"
 	}
-	if job.SkipIfOnlyChanged != "" || job.Annotations["pipeline_skip_if_only_changed"] != "" {
-		return true
+	// the pipeline controller's required set is everything prow left alone that
+	// still has to pass; optional jobs are never in it, so they wait to be asked
+	// for by name
+	if !job.Optional {
+		return "2"
 	}
-	for _, runIfChanged := range []string{job.RunIfChanged, job.Annotations["pipeline_run_if_changed"]} {
-		if runIfChanged != "" && runIfChanged != "^$" {
-			return true
-		}
-	}
-	return false
+	return "request"
 }
 
 // getPresubmitConfig fetches the prow presubmit config for a project. The
@@ -259,15 +262,56 @@ func getJobHistory(url string, depth int) (int, int, int, int, int, int, int, er
 	return successCount, failureCount, abortedCount, pendingCount, errorCount, unexpectedStatusCount, unknownCount, nil
 }
 
+// fetchJobHistoryPage retrieves one page of prow job history. prow answers with
+// a 500 and a "failed to locate build data" message for a job that has never
+// run, which is an ordinary result rather than a failure, so it is reported as
+// an absent history. Anything else non-200 is prow being unavailable: retry,
+// and give up loudly rather than let a job quietly vanish from the charts
+// because prow was busy for a moment.
+func fetchJobHistoryPage(url string) ([]byte, bool, error) {
+	const attempts = 4
+
+	var lastStatus string
+	for attempt := 0; attempt < attempts; attempt++ {
+		if attempt > 0 {
+			time.Sleep(time.Duration(attempt*attempt) * time.Second)
+		}
+
+		resp, err := http.Get(url)
+		if err != nil {
+			lastStatus = err.Error()
+			continue
+		}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			lastStatus = err.Error()
+			continue
+		}
+
+		if resp.StatusCode == http.StatusOK {
+			return body, true, nil
+		}
+		if resp.StatusCode == http.StatusInternalServerError && bytes.Contains(body, []byte("failed to locate build data")) {
+			return nil, false, nil
+		}
+		lastStatus = resp.Status
+	}
+	return nil, false, fmt.Errorf("GET %s failed after %d attempts, last result %s", url, attempts, lastStatus)
+}
+
 func processPage(url string, successCount *int, failureCount *int, abortedCount *int, pendingCount *int, errorCount *int, unexpectedStatusCount *int, unknownCount *int, depth int) error {
 	if depth >= 0 {
-		resp, err := http.Get(url)
+		body, hasHistory, err := fetchJobHistoryPage(url)
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+		if !hasHistory {
+			// prow has no build data for this job, which means it has never run
+			return nil
+		}
 
-		doc, err := goquery.NewDocumentFromReader(resp.Body)
+		doc, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
 		if err != nil {
 			return err
 		}
@@ -285,9 +329,7 @@ func processPage(url string, successCount *int, failureCount *int, abortedCount 
 		js = strings.TrimSuffix(js, ";")
 
 		if js == "" {
-			// job has never run, or prow has no history page for it
-			log.Printf("warning: no build history at %s", url)
-			return nil
+			return fmt.Errorf("no allBuilds data in the page at %s", url)
 		}
 
 		// Unmarshal the JSON

@@ -59,22 +59,24 @@
 
             // Both projects share a row per bucket, so the same category can be
             // compared across projects without scrolling.
-            var gatingAutoRow = d3.select("body").append("div").attr("class", "chart-row");
-            var gatingManualRow = d3.select("body").append("div").attr("class", "chart-row");
-            var autoRow = d3.select("body").append("div").attr("class", "chart-row");
-            var manualRow = d3.select("body").append("div").attr("class", "chart-row");
+            var stageOneGatingRow = d3.select("body").append("div").attr("class", "chart-row");
+            var stageOneRow = d3.select("body").append("div").attr("class", "chart-row");
+            var stageTwoRow = d3.select("body").append("div").attr("class", "chart-row");
+            var onRequestRow = d3.select("body").append("div").attr("class", "chart-row");
 
             allData.forEach((data, index) => {
-                // Whether a job blocks the PR and what starts it are independent
-                // questions. A pass rate means something different depending on
-                // both: a gating job that runs by itself is measured over real
-                // PRs, while a job somebody triggers by hand is measured over
-                // whichever runs they chose to ask for.
+                // OpenShift CI runs presubmits as a two stage pipeline. Prow
+                // starts stage one on every push; the pipeline controller
+                // schedules stage two once stage one passes. Optional jobs are
+                // never in its required set and wait to be asked for by name.
+                // A pass rate means something different in each: stage one is
+                // measured over every push, on request over whichever runs
+                // somebody chose to trigger.
                 var buckets = [
-                    {row: gatingAutoRow, title: " - Gating, Auto Triggered", test: job => !job.Optional && job.AutoTriggered},
-                    {row: gatingManualRow, title: " - Gating, Manual Trigger", test: job => !job.Optional && !job.AutoTriggered},
-                    {row: autoRow, title: " - Non-Gating, Auto Triggered", test: job => job.Optional && job.AutoTriggered},
-                    {row: manualRow, title: " - Non-Gating, Manual Trigger", test: job => job.Optional && !job.AutoTriggered}
+                    {row: stageOneGatingRow, title: " - Stage 1, Gating", test: job => job.Stage === "1" && !job.Optional},
+                    {row: stageOneRow, title: " - Stage 1, Non-Gating", test: job => job.Stage === "1" && job.Optional},
+                    {row: stageTwoRow, title: " - Stage 2, Gating", test: job => job.Stage === "2"},
+                    {row: onRequestRow, title: " - On Request, Non-Gating", test: job => job.Stage === "request"}
                 ];
                 var projectName = jsonFiles[index].match(/presubmit_jobs_(\w+)\.json/)[1].toUpperCase();
 
