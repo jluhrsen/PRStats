@@ -1,9 +1,12 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Vertical Bar Chart with D3.js</title>
+    <title>Presubmit Pass Rates</title>
     <script src="https://d3js.org/d3.v6.min.js"></script>
     <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
         .bar-label {
             font-size: 14px;
             text-anchor: middle;
@@ -20,6 +23,13 @@
             font-size: 20px;
             font-family: sans-serif;
             margin: 40px;
+        }
+        /* one row per bucket, so the two projects sit side by side */
+        .chart-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: flex-start;
+            gap: 20px;
         }
         .file-label {
             font-size: 20px;
@@ -47,10 +57,10 @@
                 return;
             }
 
-            // Find the maximum number of data points across all datasets
-            var maxDataPoints = Math.max(...allData.map(data => Math.max(data.filter(job => !job.Optional).length, data.filter(job => job.Optional).length)));
+            // Both projects share a row per bucket: required on top, optional below.
+            var requiredRow = d3.select("body").append("div").attr("class", "chart-row");
+            var optionalRow = d3.select("body").append("div").attr("class", "chart-row");
 
-            // Iterate over the data to create the charts
             allData.forEach((data, index) => {
                 // required vs optional is the optional field alone. always_run
                 // no longer tracks it: most e2e presubmits are always_run: false
@@ -59,32 +69,11 @@
                 var optionalJobs = data.filter(job => job.Optional);
                 var projectName = jsonFiles[index].match(/presubmit_jobs_(\w+)\.json/)[1].toUpperCase();
 
-                // Pad the datasets with empty data points
-                while (requiredJobs.length < maxDataPoints) {
-                    requiredJobs.push({Name: "", PassRate: 0, AlwaysRun: false, Optional: false});
-                }
-                while (optionalJobs.length < maxDataPoints) {
-                    optionalJobs.push({Name: "", PassRate: 0, AlwaysRun: false, Optional: true});
-                }
-
                 requiredJobs.sort((a, b) => b.PassRate - a.PassRate);
                 optionalJobs.sort((a, b) => b.PassRate - a.PassRate);
 
-                var chartId1 = "myChart" + (index * 2 + 1);
-                var chartId2 = "myChart" + (index * 2 + 2);
-                var tooltipId1 = "tooltip" + (index * 2 + 1);
-                var tooltipId2 = "tooltip" + (index * 2 + 2);
-                var labelId = "label" + index;
-
-                var svg1 = d3.select("body").append("svg").attr("id", chartId1);
-                var svg2 = d3.select("body").append("svg").attr("id", chartId2);
-
-                var tooltip1 = d3.select("body").append("div").attr("id", tooltipId1).attr("class", "tooltip").style("opacity", 0);
-                var tooltip2 = d3.select("body").append("div").attr("id", tooltipId2).attr("class", "tooltip").style("opacity", 0);
-
-                // Create the charts
-                createChart(requiredJobs, chartId1, tooltipId1, 500, maxDataPoints, projectName + " - Required");
-                createChart(optionalJobs, chartId2, tooltipId2, 500, maxDataPoints, projectName + " - Optional");
+                createChart(requiredJobs, requiredRow, projectName + " - Required");
+                createChart(optionalJobs, optionalRow, projectName + " - Optional");
             });
         }).catch(error => {
             showMessage("Failed to load presubmit job data: " + error);
@@ -95,38 +84,47 @@
         d3.select("body").append("div").attr("class", "message").text(text);
     }
 
-    function createChart(jobs, chartId, tooltipId, chartHeight, maxDataPoints, title) {
-        var margin = {top: 100, right: 300, bottom: 40, left: 800},
+    // Every job in a chart carries the same pull-ci-openshift-<project>-<branch>-
+    // prefix, which costs more label width than the part that differs.
+    function shortName(name) {
+        return name.replace(/^pull-ci-openshift-[a-z0-9-]*?-(?:main|master)-/, "");
+    }
+
+    function createChart(jobs, container, title) {
+        var margin = {top: 60, right: 40, bottom: 40, left: 440},
             barHeight = 20,
             barSpace = 15,
-            height = maxDataPoints * (barHeight + barSpace),
-            width = chartHeight;
+            // size each chart to its own job count so the bars stay the same
+            // thickness whether a bucket holds 8 jobs or 22
+            height = Math.max(jobs.length, 1) * (barHeight + barSpace),
+            width = 420;
+
+        var barData = jobs.map(job => ({
+            jobName: shortName(job.Name),
+            passRate: job.PassRate
+        }));
 
         var y = d3.scaleBand()
             .range([0, height])
             .padding(0.1)
-            .domain(jobs.filter(job => job.Name !== "").map(job => job.Name));
+            .domain(barData.map(d => d.jobName));
 
         var x = d3.scaleLinear()
             .range([0, width])
             .domain([0, 1]); // The domain is [0, 1] since the pass rates are percentages
 
-        var barData = jobs.map(job => ({
-            jobName: job.Name,
-            passRate: job.PassRate
-        }));
+        var gradientId = "svgGradient" + title.replace(/[^A-Za-z0-9]/g, "");
 
-        var svg = d3.select("#" + chartId)
+        var svg = container.append("svg")
             .attr("width", width + margin.left + margin.right)
             .attr("height", height + margin.top + margin.bottom)
             .append("g")
             .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
 
-
         // Define gradient
         var defs = svg.append("defs");
         var gradient = defs.append("linearGradient")
-            .attr("id", "svgGradient" + chartId) // Making the gradient ID unique for each chart
+            .attr("id", gradientId) // Making the gradient ID unique for each chart
             .attr("x1", "0%")
             .attr("x2", "100%") // Gradient direction changed to horizontal
             .attr("y1", "0%")
@@ -145,17 +143,18 @@
             .attr("stop-opacity", 1);
 
         svg.selectAll(".bar")
-            .data(barData.filter(d => d.jobName !== ""))
+            .data(barData)
             .enter().append("rect")
             .attr("class", "bar")
             .attr("y", function(d) { return y(d.jobName); })
             .attr("height", y.bandwidth())
             .attr("x", 0)
             .attr("width", function(d) { return x(d.passRate); })
-            .style("fill", "url(#svgGradient" + chartId + ")");
+            .style("fill", "url(#" + gradientId + ")");
 
         var xAxis = d3.axisBottom(x).tickFormat(d3.format(".0%"));
         svg.append("g").attr("transform", "translate(0," + height + ")").call(xAxis);
+
         var yAxis = d3.axisLeft(y)
             .tickFormat(function(d, i) {
                 return barData[i].jobName + " (" + (barData[i].passRate * 100).toFixed(0) + '%)';
@@ -164,18 +163,15 @@
         svg.append("g")
             .call(yAxis)
             .selectAll("text")
-            .style("font-size", "15px");
+            .style("font-size", "13px");
+
         svg.append("text")
             .attr("x", (width / 2))
             .attr("y", -(margin.top / 2))
             .attr("text-anchor", "middle")
-            .style("font-size", "50px")
+            .style("font-size", "28px")
             .style("font-weight", "bold")
             .text(title);
-
-        var xAxis = d3.axisBottom(x).tickFormat(d3.format(".0%"));
-        svg.append("g").attr("transform", "translate(0," + height + ")").call(xAxis);
-
     }
 </script>
 </body>
